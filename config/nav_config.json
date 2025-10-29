@@ -1,0 +1,23 @@
+[
+    {
+        "tooltip": "Gemini AI",
+        "icon": "gemini.svg",
+        "url": "https://gemini.google.com",
+        "order": 1,
+        "pinned": true
+    },
+    {
+        "tooltip": "ChatGPT",
+        "icon": "chatgpt.svg",
+        "url": "https://chat.openai.com",
+        "order": 2,
+        "pinned": true
+    },
+    {
+        "tooltip": "Claude AI",
+        "icon": "claude.svg",
+        "url": "https://claude.ai/",
+        "order": 3,
+        "pinned": true
+    }
+]
