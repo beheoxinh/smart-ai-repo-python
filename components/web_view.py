@@ -1,20 +1,25 @@
 # File: components/web_view.py
 import ctypes
 import os
-import subprocess
 import sys
 import traceback
 from urllib.parse import urlparse
 from uuid import UUID
 
-from PyQt6.QtCore import QUrl, Qt, pyqtSignal, QTimer, QPropertyAnimation
-from PyQt6.QtGui import QGuiApplication, QClipboard, QPainter, QColor, QDesktopServices, QAction
-from PyQt6.QtWebEngineCore import (QWebEnginePage, QWebEngineProfile,
-                                   QWebEngineSettings, QWebEngineUrlRequestInterceptor, QWebEngineDownloadRequest)
+from PyQt6.QtCore import QUrl, Qt, pyqtSignal, QStandardPaths, QTimer
+from PyQt6.QtGui import QGuiApplication, QDesktopServices, QAction
+from PyQt6.QtWebEngineCore import (
+    QWebEnginePage,
+    QWebEngineProfile,
+    QWebEngineSettings,
+    QWebEngineUrlRequestInterceptor,
+    QWebEngineUrlRequestInfo,
+)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QMainWindow, QLabel, QApplication, QMenu
+from PyQt6.QtWidgets import QMainWindow, QMenu, QMessageBox
 
-from utils import AppPaths, alert_popup
+from utils import AppPaths
+
 
 class PopupWindow(QMainWindow):
     popupClosed = pyqtSignal()
@@ -31,10 +36,7 @@ class PopupWindow(QMainWindow):
         self.setWindowTitle("Loading...")
         self.setMinimumSize(800, 650)
         self.setWindowFlags(
-            Qt.WindowType.Window |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.WindowMinimizeButtonHint |
-            Qt.WindowType.WindowCloseButtonHint
+            Qt.WindowType.Window | Qt.WindowType.WindowCloseButtonHint
         )
 
         screen = QGuiApplication.primaryScreen().geometry()
@@ -49,8 +51,6 @@ class PopupWindow(QMainWindow):
 
     def closeEvent(self, event):
         print("PopupWindow: Closing")
-        if self.parent:
-            self.parent.popupClosed.emit()
         self.popupClosed.emit()
         event.accept()
 
@@ -63,46 +63,48 @@ class CustomWebEnginePage(QWebEnginePage):
     def __init__(self, profile, parent=None):
         super().__init__(profile, parent)
         self._profile = profile
-        self.parent = parent # This parent is CustomWebView
+        self.parent = parent  # This parent is CustomWebView or PopupWindow
         self.auth_in_progress = False
         self.current_url = None
 
-        # Override các actions mặc định để vô hiệu hóa chúng
+        # Chỉ ẩn các action không sử dụng/không mong muốn
         self.action(QWebEnginePage.WebAction.Back).setVisible(False)
         self.action(QWebEnginePage.WebAction.Forward).setVisible(False)
         self.action(QWebEnginePage.WebAction.Reload).setVisible(False)
         self.action(QWebEnginePage.WebAction.ViewSource).setVisible(False)
         self.action(QWebEnginePage.WebAction.SavePage).setVisible(False)
-        # self.action(QWebEnginePage.WebAction.SelectAll).setVisible(False) # Keep SelectAll for editable content
         self.action(QWebEnginePage.WebAction.InspectElement).setVisible(False)
-        self.action(QWebEnginePage.WebAction.DownloadLinkToDisk).setVisible(False)
-        self.action(QWebEnginePage.WebAction.DownloadImageToDisk).setVisible(False)
-        self.action(QWebEnginePage.WebAction.DownloadMediaToDisk).setVisible(False)
-        self.action(QWebEnginePage.WebAction.OpenLinkInNewWindow).setVisible(False) # Ensure this is hidden
+        self.action(QWebEnginePage.WebAction.OpenLinkInNewWindow).setVisible(False)
         self.action(QWebEnginePage.WebAction.OpenLinkInNewTab).setVisible(False)
         self.action(QWebEnginePage.WebAction.OpenLinkInNewBackgroundTab).setVisible(False)
+        self.action(QWebEnginePage.WebAction.DownloadLinkToDisk).setVisible(False)
+        self.action(QWebEnginePage.WebAction.DownloadMediaToDisk).setVisible(False)
+        # Giữ các action sẽ dùng trong menu: Reload, Copy, Cut, Paste, SelectAll, DownloadImageToDisk, CopyImage*, CopyLinkToClipboard
 
     def javaScriptCanAccessClipboard(self):
         return True
 
     def javaScriptConsoleMessage(self, level, message, line, sourceid):
-        print(f"JS [{level}] {message} (line {line})")
+        # print(f"JS [{level}] {message} (line {line})")
+        pass
 
     def acceptNavigationRequest(self, url, _type, isMainFrame):
         url_str = url.toString()
         parsed_url = urlparse(url_str)
 
-        if "claude.ai" in parsed_url.netloc:
-            if self.auth_in_progress:
-                print("Auth completed, returning to app")
-                self.auth_in_progress = False
-                self.authFinished.emit(url_str)
-                return True
-        return True
+        if "claude.ai" in parsed_url.netloc and self.auth_in_progress:
+            print("Auth completed, returning to app")
+            self.auth_in_progress = False
+            self.authFinished.emit(url_str)
+            return True
+
+        return super().acceptNavigationRequest(url, _type, isMainFrame)
 
     def createWindow(self, window_type):
         try:
             popup = PopupWindow(self._profile, self.parent)
+            # Đánh dấu auth_in_progress cho page của popup nếu đây là luồng auth
+            popup.page.auth_in_progress = True
             popup.show()
             self.popupCreated.emit(popup)
             return popup.page
@@ -112,36 +114,21 @@ class CustomWebEnginePage(QWebEnginePage):
 
     def createStandardContextMenu(self):
         try:
-            # Create a new QMenu. Styling is handled by the parent CustomWebView.
             custom_menu = QMenu(self.view())
             custom_menu.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
-            # Get context data to decide which actions to show.
             hit_test_data = self.contextMenuData()
             link_url = hit_test_data.linkUrl()
-            is_link_present = bool(link_url.url()) # Check if URL string is not empty
-            is_image = hit_test_data.mediaType() == QWebEnginePage.MediaType.MediaTypeImage
+            is_link_present = bool(link_url.url())
+            is_image = hit_test_data.mediaType() == hit_test_data.MediaType.MediaTypeImage
             is_text_selected = bool(hit_test_data.selectedText())
             is_editable = hit_test_data.isContentEditable()
 
-            # --- DEBUGGING PRINTS ---
-            print(f"Context Menu Debug: link_url.url() = {link_url.url()}")
-            print(f"Context Menu Debug: image_url.url() = {hit_test_data.imageUrl().url()}")
-            print(f"Context Menu Debug: media_url.url() = {hit_test_data.mediaUrl().url()}")
-            print(f"Context Menu Debug: is_link_present = {is_link_present}")
-            print(f"Context Menu Debug: is_image = {is_image}")
-            print(f"Context Menu Debug: is_text_selected = {is_text_selected}")
-            print(f"Context Menu Debug: is_editable = {is_editable}")
-            print(f"Context Menu Debug: mediaType = {hit_test_data.mediaType()}")
-            # ------------------------
-
-            # Build the menu from scratch based on context.
             if is_link_present:
                 open_action = QAction("Open in default browser", custom_menu)
                 open_action.triggered.connect(lambda: QDesktopServices.openUrl(link_url))
                 custom_menu.addAction(open_action)
-                
-                # Only add CopyLinkToClipboard if the link is actually valid
+
                 if link_url.isValid():
                     custom_menu.addAction(self.action(QWebEnginePage.WebAction.CopyLinkToClipboard))
                 custom_menu.addSeparator()
@@ -154,7 +141,7 @@ class CustomWebEnginePage(QWebEnginePage):
 
             if is_text_selected:
                 custom_menu.addAction(self.action(QWebEnginePage.WebAction.Copy))
-            
+
             if is_editable:
                 if not is_text_selected:
                     custom_menu.addAction(self.action(QWebEnginePage.WebAction.Copy))
@@ -162,21 +149,18 @@ class CustomWebEnginePage(QWebEnginePage):
                 custom_menu.addAction(self.action(QWebEnginePage.WebAction.Paste))
                 custom_menu.addSeparator()
                 custom_menu.addAction(self.action(QWebEnginePage.WebAction.SelectAll))
-            
-            # Add general actions if the menu is still empty or for general clicks
-            # Ensure Reload is always available if no other specific actions are added
+
+            # Thêm Reload nếu không có action cụ thể nào
             if not custom_menu.actions() or (not is_link_present and not is_image and not is_text_selected and not is_editable):
-                 # Add a separator if there are already items before adding Reload
                 if custom_menu.actions():
                     custom_menu.addSeparator()
                 custom_menu.addAction(self.action(QWebEnginePage.WebAction.Reload))
 
-            # Clean up trailing separator if any
+            # Dọn separator cuối
             actions = custom_menu.actions()
             if actions and actions[-1].isSeparator():
                 custom_menu.removeAction(actions[-1])
-            
-            # Don't show an empty menu
+
             if not custom_menu.actions():
                 return None
 
@@ -184,7 +168,8 @@ class CustomWebEnginePage(QWebEnginePage):
         except Exception as e:
             print(f"ERROR in createStandardContextMenu: {e}")
             traceback.print_exc()
-            return QMenu(self.view()) # Return an empty menu to prevent crash
+            return QMenu(self.view())  # Return an empty menu to prevent crash
+
 
 class CustomWebView(QWebEngineView):
     popupCreated = pyqtSignal(object)
@@ -194,13 +179,15 @@ class CustomWebView(QWebEngineView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.app_paths = AppPaths() # Initialize AppPaths
+        self.setObjectName("customWebView")
+
+        self.app_paths = AppPaths()  # Initialize AppPaths
         self.active_toasts = []
-        self.active_popups = [] # List to keep track of open popup windows
-        
+        self.active_popups = []  # List to keep track of open popup windows
+
         # Apply stylesheet for the webview and its child QMenu
         self.setStyleSheet("""
-            CustomWebView {
+            #customWebView {
                 background-color: white;
             }
             QMenu {
@@ -232,7 +219,7 @@ class CustomWebView(QWebEngineView):
                 color: #6d6d6d;
             }
         """)
-        
+
         self.profile = QWebEngineProfile("secure_browser_profile", self)
         self.setup_profile()
 
@@ -240,24 +227,52 @@ class CustomWebView(QWebEngineView):
         self.setPage(self.custom_page)
 
         self.custom_page.urlChanged.connect(self.check_main_url_change)
-        # self.custom_page.popupCreated.connect(self.handle_popup_created) # Removed, handled by add_popup_window
+        self.custom_page.urlChanged.connect(lambda url: self.save_last_url(url.toString()))
+        self.custom_page.popupCreated.connect(self.add_popup_window)
         self.custom_page.authCallback.connect(self.handle_auth_callback)
         self.custom_page.loadFinished.connect(self.on_load_finished)
+        
+        # Handle WebAuthn permission requests
+        self.custom_page.featurePermissionRequested.connect(self.on_feature_permission_requested)
+        self.custom_page.renderProcessTerminated.connect(self.on_render_process_terminated)
 
         self.setup_settings()
         self.setMouseTracking(True)
         self.loaded = False
 
+    def on_render_process_terminated(self, termination_status, exit_code):
+        status_str = str(termination_status)
+        print(f"[CRITICAL] Render process terminated! Status: {status_str}, Exit Code: {exit_code}")
+        
+        # Try to reload if it was a crash
+        if termination_status != QWebEnginePage.RenderProcessTerminationStatus.NormalTermination:
+            print("Attempting to reload page after crash...")
+            QTimer.singleShot(1000, self.reload)
+
+    def on_feature_permission_requested(self, url, feature):
+        # Defer the permission granting to avoid potential re-entrancy issues or crashes
+        # inside the signal handler.
+        print(f"Permission requested for feature {feature} on {url.toString()}")
+        QTimer.singleShot(0, lambda: self._grant_permission(url, feature))
+
+    def _grant_permission(self, url, feature):
+        try:
+            print(f"Granting permission for feature {feature} on {url.toString()}")
+            self.custom_page.setFeaturePermission(url, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
+        except Exception as e:
+            print(f"Error granting permission: {e}")
+
     def add_popup_window(self, popup_window_instance):
         print(f"CustomWebView: Adding popup window {popup_window_instance}")
         self.active_popups.append(popup_window_instance)
         popup_window_instance.popupClosed.connect(lambda: self.remove_popup_window(popup_window_instance))
+        # Bubble up to external listeners if needed
+        self.popupCreated.emit(popup_window_instance)
 
     def remove_popup_window(self, popup_window_instance):
         print(f"CustomWebView: Removing popup window {popup_window_instance}")
         if popup_window_instance in self.active_popups:
             self.active_popups.remove(popup_window_instance)
-        # Emit CustomWebView's own popupClosed signal if its parent needs to know
         self.popupClosed.emit()
 
     def clear_cache(self):
@@ -299,7 +314,7 @@ class CustomWebView(QWebEngineView):
             QWebEngineSettings.WebAttribute.Accelerated2dCanvasEnabled,
         ]:
             settings.setAttribute(attr, True)
-        
+
         settings.setAttribute(QWebEngineSettings.WebAttribute.AllowRunningInsecureContent, False)
         settings.setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
         settings.setDefaultTextEncoding('UTF-8')
@@ -313,9 +328,9 @@ class CustomWebView(QWebEngineView):
                 print(f"Inject JS failed: {e}")
         else:
             print("Page load failed")
-        
+
         # Close all active popups when the main webview reloads
-        for popup in list(self.active_popups): # Iterate over a copy to allow modification during iteration
+        for popup in list(self.active_popups):
             print(f"CustomWebView: Closing popup {popup} due to main webview reload.")
             popup.close()
 
@@ -323,36 +338,17 @@ class CustomWebView(QWebEngineView):
         master_script = '''
         (function() {
             'use strict';
-            if (navigator.webdriver) {
-                try {
+            try {
+                // Spoof webdriver property
+                if ('webdriver' in navigator) {
                     Object.defineProperty(navigator, 'webdriver', { get: () => false });
-                } catch (e) {
-                    console.error('Failed to spoof webdriver:', e);
                 }
+            } catch (e) {
+                console.log('Failed to spoof webdriver:', e);
             }
+            // Minimal chrome object
             window.chrome = window.chrome || {};
-            window.chrome.runtime = window.chrome.runtime || { id: 'your-extension-id' };
-            if (!navigator.permissions) {
-                navigator.permissions = {
-                    query: async (descriptor) => {
-                        const state = (descriptor.name === 'notifications') ? 'granted' : 'prompt';
-                        return { name: descriptor.name, state: state, onchange: null };
-                    }
-                };
-            }
-            window.addEventListener('error', function(e) {
-                console.log('JS Error:', {
-                    message: e.message,
-                    filename: e.filename,
-                    line: e.lineno,
-                    col: e.colno,
-                    error: e.error ? e.error.stack : 'N/A'
-                });
-            });
-            window.addEventListener('unhandledrejection', function(e) {
-                console.log('JS Unhandled Rejection:', e.reason ? (e.reason.stack || e.reason) : 'N/A');
-            });
-            console.log('Chrome compatibility script injected and executed.');
+            console.log('Compatibility script executed.');
         })();
         '''
         self.page().runJavaScript(master_script)
@@ -360,7 +356,7 @@ class CustomWebView(QWebEngineView):
     def save_last_url(self, url):
         try:
             last_url_path = os.path.join(self.app_paths.get_data_dir(), 'lasturl.txt')
-            with open(last_url_path, "w") as file:
+            with open(last_url_path, "w", encoding="utf-8") as file:
                 file.write(url)
             print(f"URL saved to: {last_url_path}")
         except Exception as e:
@@ -370,7 +366,7 @@ class CustomWebView(QWebEngineView):
         try:
             last_url_path = os.path.join(self.app_paths.get_data_dir(), 'lasturl.txt')
             if os.path.exists(last_url_path):
-                with open(last_url_path, "r") as file:
+                with open(last_url_path, "r", encoding="utf-8") as file:
                     url = file.read().strip()
                     if url:
                         print(f"URL loaded from: {last_url_path}")
@@ -380,10 +376,24 @@ class CustomWebView(QWebEngineView):
         return "https://chatgpt.com/"
 
     def get_download_folder(self):
-        FOLDERID_Downloads = UUID('{374DE290-123F-4565-9164-39C4925E467B}').bytes_le
-        path_ptr = ctypes.c_wchar_p()
-        ctypes.windll.shell32.SHGetKnownFolderPath(FOLDERID_Downloads, 0, None, ctypes.byref(path_ptr))
-        return path_ptr.value
+        # Cross-platform: prefer Qt's standard path
+        path = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)
+        if path:
+            return path
+
+        # Fallbacks
+        if sys.platform == "win32":
+            try:
+                FOLDERID_Downloads = UUID('{374DE290-123F-4565-9164-39C4925E467B}').bytes_le
+                path_ptr = ctypes.c_wchar_p()
+                ctypes.windll.shell32.SHGetKnownFolderPath(FOLDERID_Downloads, 0, None, ctypes.byref(path_ptr))
+                return path_ptr.value
+            except Exception:
+                pass
+
+        # Generic fallback
+        home = os.path.expanduser("~")
+        return os.path.join(home, "Downloads")
 
     def handle_download_requested(self, download_item):
         try:
@@ -407,20 +417,6 @@ class CustomWebView(QWebEngineView):
         print(f"WebView: Auth callback received: {callback_url}")
         self.webviewRedirectCompleted.emit(callback_url)
 
-    def handle_popup_created(self, popup):
-        print("CustomWebView: New popup created")
-        self.popupCreated.emit(popup)
-
-    def createWindow(self, window_type):
-        try:
-            popup_window = PopupWindow(self.profile(), self)
-            popup_window.show()
-            self.popupCreated.emit(popup_window)
-            return popup_window.web_view.page()
-        except Exception as e:
-            print(f"Error creating popup window: {e}")
-            return None
-
     def showEvent(self, event):
         super().showEvent(event)
         if not self.loaded:
@@ -440,20 +436,19 @@ class CustomWebView(QWebEngineView):
 
 class EnhancedBrowserInterceptor(QWebEngineUrlRequestInterceptor):
     def interceptRequest(self, info):
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "Accept-Language": "en-US,en;q=0.9,vi;q=0.8",
-            "Accept-Encoding": "gzip, deflate, br",
-            "DNT": "1",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-User": "?1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Ch-Ua": '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": '"Windows"'
-        }
-        for name, value in headers.items():
-            info.setHttpHeader(name.encode(), value.encode())
+        try:
+            # Always set UA and Accept-Language
+            info.setHttpHeader(b"User-Agent", b"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+            info.setHttpHeader(b"Accept-Language", b"en-US,en;q=0.9,vi;q=0.8")
+
+            # Only set Accept for main/sub frame navigations
+            if info.resourceType() in (
+                QWebEngineUrlRequestInfo.ResourceType.ResourceTypeMainFrame,
+                QWebEngineUrlRequestInfo.ResourceType.ResourceTypeSubFrame,
+            ):
+                info.setHttpHeader(
+                    b"Accept",
+                    b"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                )
+        except Exception as e:
+            print(f"Interceptor error: {e}")

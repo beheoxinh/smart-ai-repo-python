@@ -1,11 +1,11 @@
 # File: components/menu_setting_dialog.py
 
 import os
-import shutil
 import random
+import shutil
 import string
-import requests
 
+import requests
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QVBoxLayout, QLineEdit, QPushButton, QMessageBox,

@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt, QTimer, QPoint, QEvent, QPropertyAnimation, QUrl
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QApplication
 from PyQt6.QtGui import QCursor, QShortcut, QKeySequence
 
-from components.title_bar import TitleBar
+# from components.title_bar import TitleBar # Removed TitleBar
 from components.resize_handle import ResizeHandle
 from components.content_widget import ContentWidget
 
@@ -13,7 +13,6 @@ class Sidebar(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.DEFAULT_WIDTH_RATIO = 0.55
         self.dialog_open = False
         self.setWindowTitle("sidebar")
         self.is_visible = False
@@ -21,9 +20,13 @@ class Sidebar(QMainWindow):
         self.is_resizing = False
         self.has_active_popup = False
         self.popup_windows = []
-        self.last_width = None  # Store the last manually resized width
+        self.last_width = None
         self.init_ui()
         self.setup_shortcut()
+
+    def calculate_width(self, screen_width):
+        # Set default width to 60% of screen width as requested
+        return int(screen_width * 0.6)
 
     def setup_shortcut(self):
         shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
@@ -35,7 +38,6 @@ class Sidebar(QMainWindow):
             Qt.WindowType.Tool |
             Qt.WindowType.WindowStaysOnTopHint
         )
-        # QApplication.instance().installEventFilter(self)
         self.installEventFilter(self)
         container = QWidget()
         container_layout = QHBoxLayout(container)
@@ -50,11 +52,15 @@ class Sidebar(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        self.title_bar = TitleBar(self)
-        main_layout.addWidget(self.title_bar)
+        # Removed TitleBar to reclaim space
+        # self.title_bar = TitleBar(self)
+        # main_layout.addWidget(self.title_bar)
 
         self.content_widget = ContentWidget()
         main_layout.addWidget(self.content_widget)
+
+        # Connect close button signal from content_widget
+        self.content_widget.closeRequested.connect(self.hide_sidebar)
 
         self.content_widget.web_view.popupCreated.connect(self.handle_popup_created)
         self.content_widget.web_view.webviewRedirectCompleted.connect(self.handle_webview_redirect_completed)
@@ -66,16 +72,13 @@ class Sidebar(QMainWindow):
 
         primary_screen = QApplication.primaryScreen()
         if primary_screen:
-            self.setFixedWidth(int(primary_screen.geometry().width() * self.DEFAULT_WIDTH_RATIO))
+            self.setFixedWidth(self.calculate_width(primary_screen.geometry().width()))
 
-        # Xác định màn hình ngoài cùng bên phải
-        self.rightmost_screen = max(QApplication.screens(), key=lambda s: s.geometry().x() + s.geometry().width())
+        self.update_rightmost_screen()
 
         self.mouse_timer = QTimer()
         self.mouse_timer.timeout.connect(self.check_mouse)
-        self.mouse_timer.start(200)
-
-        self.previous_state = win32api.GetKeyState(0x01)
+        self.mouse_timer.start(100)
 
         self.setStyleSheet("""
             QMainWindow {
@@ -85,6 +88,13 @@ class Sidebar(QMainWindow):
 
         self.hide()
 
+    def update_rightmost_screen(self):
+        screens = QApplication.screens()
+        if screens:
+            self.rightmost_screen = max(screens, key=lambda s: s.geometry().x() + s.geometry().width())
+        else:
+            self.rightmost_screen = None
+
     def handle_navigation(self, url):
         self.content_widget.web_view.setUrl(QUrl(url))
         self.content_widget.web_view.save_last_url(url)
@@ -93,154 +103,140 @@ class Sidebar(QMainWindow):
         if event.type() == QEvent.Type.MouseButtonPress:
             if self.dialog_open:
                 return False
-
-            pos = event.globalPosition().toPoint()
-            clicked_widget = QApplication.instance().widgetAt(pos)
-
-            if clicked_widget:
-                win = clicked_widget.window()
-                if getattr(win, '__menu_setting_dialog__', False):
-                    return False
-
-            if clicked_widget and self.isAncestorOf(clicked_widget):
-                return False
-
-            if self.is_visible:
-                print(f"Clicked outside Sidebar and popups at {pos}. Scheduling hide...")
-                QTimer.singleShot(100, self.hide_sidebar_properly)
-                return False
+            pass
 
         return super().eventFilter(obj, event)
 
-    def hide_sidebar_properly(self):
-        if self.is_visible:
-            self.hide_sidebar()
-
     def handle_popup_created(self, popup_window):
-        print("Sidebar: Popup created")
-        self.popup_windows.append(popup_window)  # Lưu đúng PopupWindow
+        # print("Sidebar: Popup created")
+        self.popup_windows.append(popup_window)
         self.has_active_popup = True
         self.mouse_timer.stop()
         popup_window.popupClosed.connect(lambda: self.handle_popup_closed(popup_window))
 
     def handle_popup_closed(self, popup=None):
-        print("Sidebar: Popup closed")
+        # print("Sidebar: Popup closed")
         if popup in self.popup_windows:
             self.popup_windows.remove(popup)
 
         if not self.popup_windows:
             self.has_active_popup = False
-            self.mouse_timer.start(100)  # Restart the mouse timer
-            # Removed gc.collect() as it's generally not needed and can cause performance issues
+            self.mouse_timer.start(100)
 
     def handle_webview_redirect_completed(self, callback_url):
-        print(f"[Sidebar] Received webviewRedirectCompleted with URL: {callback_url}")
-
+        # print(f"[Sidebar] Received webviewRedirectCompleted with URL: {callback_url}")
         for popup in self.popup_windows[:]:
             if popup:
-                print(f"[Sidebar] Closing popup: {popup}")
                 popup.close()
-
         self.popup_windows.clear()
         self.has_active_popup = False
         self.mouse_timer.start(100)
 
-    def is_fullscreen_on_screen(self, screen):
-        """Kiểm tra xem màn hình có ứng dụng toàn màn hình hay không."""
+    def is_foreground_fullscreen(self, screen):
+        try:
+            hwnd = win32gui.GetForegroundWindow()
+            if not hwnd:
+                return False
+            
+            class_name = win32gui.GetClassName(hwnd)
+            if class_name in ["Progman", "WorkerW"]:
+                return False
 
-        def enum_windows_callback(hwnd, result):
             if not win32gui.IsWindowVisible(hwnd):
-                return
-            rect = win32gui.GetWindowRect(hwnd)
-            screen_geometry = screen.geometry()
-            if rect[0] == screen_geometry.left() and rect[1] == screen_geometry.top() and \
-                    rect[2] == screen_geometry.right() and rect[3] == screen_geometry.bottom():
-                result.append(hwnd)
+                return False
 
-        result = []
-        win32gui.EnumWindows(enum_windows_callback, result)
-        return len(result) > 0
+            rect = win32gui.GetWindowRect(hwnd)
+            screen_geo = screen.geometry()
+            
+            win_x, win_y = rect[0], rect[1]
+            win_w = rect[2] - rect[0]
+            win_h = rect[3] - rect[1]
+            
+            return (abs(win_x - screen_geo.x()) <= 1 and
+                    abs(win_y - screen_geo.y()) <= 1 and
+                    abs(win_w - screen_geo.width()) <= 1 and
+                    abs(win_h - screen_geo.height()) <= 1)
+        except Exception:
+            # print(f"Error checking fullscreen: {e}")
+            return False
 
     def check_mouse(self):
         try:
             if self.is_resizing or self.has_active_popup:
                 return
 
-            cursor_pos = win32gui.GetCursorPos()
-            cursor_point = QPoint(cursor_pos[0], cursor_pos[1])
-            screen = self.get_screen_at_cursor()
-
-            if not screen or screen != self.rightmost_screen:
+            cursor_pos = QCursor.pos()
+            
+            self.update_rightmost_screen()
+            if not self.rightmost_screen:
                 return
-
-            screen_geometry = self.rightmost_screen.geometry()
-
-            is_near_edge = (cursor_pos[0] >= screen_geometry.x() + screen_geometry.width() - 5 and
-                            cursor_pos[0] <= screen_geometry.x() + screen_geometry.width())
+            
+            screen = self.rightmost_screen
+            screen_geo = screen.geometry()
 
             if not self.is_visible:
-                # Sidebar ẩn: chỉ cần kiểm tra dí mép màn hình
-                if is_near_edge:
-                    # Added fullscreen check here
-                    if self.is_fullscreen_on_screen(screen):
-                        return  # Don't show sidebar if a fullscreen app is active
+                right_edge = screen_geo.x() + screen_geo.width()
+                is_at_edge = (cursor_pos.x() >= right_edge - 2)
+                is_vertically_inside = (screen_geo.y() <= cursor_pos.y() <= screen_geo.y() + screen_geo.height())
+
+                if is_at_edge and is_vertically_inside:
+                    if self.is_foreground_fullscreen(screen):
+                        return
 
                     self.active_screen = screen
                     if not self.is_resizing:
-                        self.setFixedWidth(self.last_width or int(screen.geometry().width() * self.DEFAULT_WIDTH_RATIO))
+                        self.setFixedWidth(self.last_width or self.calculate_width(screen_geo.width()))
                     self.update_position()
                     self.show_sidebar()
-                    self.is_visible = True
-                return
+                    return
 
-            # Nếu sidebar đang hiện thì kiểm tra click ra ngoài để ẩn
-            if not self.geometry().contains(cursor_point):
-                left_state = win32api.GetKeyState(0x01)  # Left Mouse
-                right_state = win32api.GetKeyState(0x02)  # Right Mouse
-                middle_state = win32api.GetKeyState(0x04)  # Middle Mouse
+            else:
+                if not self.frameGeometry().contains(cursor_pos):
+                    left_state = win32api.GetKeyState(0x01)
+                    right_state = win32api.GetKeyState(0x02)
+                    middle_state = win32api.GetKeyState(0x04)
 
-                if left_state < 0 or right_state < 0 or middle_state < 0:
-                    print("Detected mouse click outside Sidebar. Hiding sidebar.")
-                    self.hide_sidebar()
-                    self.is_visible = False
+                    if left_state < 0 or right_state < 0 or middle_state < 0:
+                        # print("Detected click outside. Hiding.")
+                        self.hide_sidebar()
 
-        except Exception as e:
-            print(f"Error in check_mouse: {e}")
-
-    # Removed _delayed_hide as it was not used
+        except Exception:
+            # print(f"Error in check_mouse: {e}")
+            pass
 
     def toggle_sidebar(self):
         if self.is_visible:
             self.hide_sidebar()
         else:
-            self.show_sidebar()
+            screen = self.get_screen_at_cursor()
+            if screen:
+                self.active_screen = screen
+                self.update_position()
+                self.show_sidebar()
 
     def show_sidebar(self):
-        screen = self.get_screen_at_cursor()
-        if screen:
-            self.active_screen = screen
-            if not self.is_resizing:
-                self.setFixedWidth(self.last_width or int(screen.geometry().width() * self.DEFAULT_WIDTH_RATIO))
-            self.update_position()
+        if self.is_visible:
+            return
+            
+        self.setWindowOpacity(0.0)
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
-            self.setWindowOpacity(0.0)  # Reset opacity trước khi show
-            self.show()
+        self.fade_animation = QPropertyAnimation(self, b"windowOpacity")
+        self.fade_animation.setDuration(150)
+        self.fade_animation.setStartValue(0.0)
+        self.fade_animation.setEndValue(1.0)
+        self.fade_animation.start()
 
-            self.fade_animation = QPropertyAnimation(self, b"windowOpacity")
-            self.fade_animation.setDuration(150)  # ms
-            self.fade_animation.setStartValue(0.0)
-            self.fade_animation.setEndValue(1.0)
-            self.fade_animation.start()
-
-            self.is_visible = True
+        self.is_visible = True
 
     def hide_sidebar(self):
-        # CRASH FIX: Prevent hide animation during resize at all costs.
         if self.is_resizing or not self.isVisible():
             return
 
         self.fade_animation = QPropertyAnimation(self, b"windowOpacity")
-        self.fade_animation.setDuration(350)
+        self.fade_animation.setDuration(200)
         self.fade_animation.setStartValue(1.0)
         self.fade_animation.setEndValue(0.0)
 
@@ -255,7 +251,7 @@ class Sidebar(QMainWindow):
         if self.parent:
             self.parent.popupClosed.emit()
         self.popupClosed.emit()
-        self.content_widget.web_view.deleteLater()  # Giải phóng WebView manually
+        self.content_widget.web_view.deleteLater()
         event.accept()
 
     def get_current_screen_width(self):
@@ -268,7 +264,7 @@ class Sidebar(QMainWindow):
 
     def resizing_finished(self):
         self.is_resizing = False
-        self.last_width = self.width()  # Save the last manually resized width
+        self.last_width = self.width()
 
     def get_screen_at_cursor(self):
         cursor_pos = QCursor.pos()
@@ -292,31 +288,19 @@ class Sidebar(QMainWindow):
         )
 
     def get_taskbar_height(self):
-        taskbar = win32gui.FindWindow('Shell_TrayWnd', None)
-        if taskbar:
-            rect = win32gui.GetWindowRect(taskbar)
-            return rect[3] - rect[1]
+        try:
+            taskbar = win32gui.FindWindow('Shell_TrayWnd', None)
+            if taskbar:
+                rect = win32gui.GetWindowRect(taskbar)
+                return rect[3] - rect[1]
+        except:
+            pass
         return 0
 
     def moveEvent(self, event):
         if self.active_screen:
             self.update_position()
 
-    def mousePressEvent(self, event):
-        QTimer.singleShot(200, self.check_should_hide)
-        super().mousePressEvent(event)
-
-    def check_should_hide(self):
-        if self.dialog_open:
-            print("[DEBUG] Dialog is open, skip auto-hide")
-            return
-        cursor = QCursor.pos()
-        clicked_widget = QApplication.instance().widgetAt(cursor)
-
-        if not clicked_widget or not self.isAncestorOf(clicked_widget):
-            print("Auto-hiding Sidebar due to click outside.")
-            self.hide_sidebar()
-
     def dialog_open_set_false(self):
         self.dialog_open = False
-        print("[DEBUG] Menu dialog closed, dialog_open = False")
+        # print("[DEBUG] Menu dialog closed, dialog_open = False")

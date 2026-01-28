@@ -4,6 +4,9 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+PyQt6 = "*"
+PyQt6-WebEngine = "*"
+pywin32 = "*"
 
 [dev-packages]
 

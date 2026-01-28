@@ -1,10 +1,14 @@
 # File: components/content_widget.py
-from PyQt6.QtCore import QUrl
+from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QSizePolicy
+
 from .navigation_bar import NavigationBar
 from .web_view import CustomWebView
 
+
 class ContentWidget(QWidget):
+    closeRequested = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setup_ui()
@@ -45,6 +49,7 @@ class ContentWidget(QWidget):
         # self.nav_bar.huggingClicked.connect(lambda: self.set_and_save_url("https://huggingface.co/chat/"))
         self.nav_bar.navigationClicked.connect(self.handle_navigation_click)
         self.nav_bar.clearCacheRequested.connect(self.web_view.clear_cache)
+        self.nav_bar.closeClicked.connect(self.closeRequested.emit)
 
     def handle_navigation_click(self, url):
         self.web_view.setUrl(QUrl(url))

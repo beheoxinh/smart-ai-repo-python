@@ -15,13 +15,7 @@ class TitleBar(QFrame):
         layout.setContentsMargins(10, 0, 5, 0)
         layout.setSpacing(0)
 
-        title = QLabel("BeHeoXinh AI")
-        title.setStyleSheet("""
-            color: white; 
-            font-weight: bold;
-            font-size: 14px;
-        """)
-        layout.addWidget(title)
+        # Removed title label "BeHeoXinh AI"
 
         layout.addStretch()
 

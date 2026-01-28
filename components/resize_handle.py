@@ -1,6 +1,7 @@
 # File: components/resize_handle.py
-from PyQt6.QtWidgets import QFrame
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QFrame
+
 
 class ResizeHandle(QFrame):
     def __init__(self, parent):

@@ -1,1 +1,1 @@
-https://claude.ai/
+https://accounts.google.com/v3/signin/identifier?continue=https%3A%2F%2Fgemini.google.com%2F&dsh=S-250315357%3A1768790800546541&ec=GAZAkgU&followup=https%3A%2F%2Fgemini.google.com%2F&ifkv=AXbMIuANstnTd5VLE--C8z5X1MVIs71DAgScYxMDCwzi8I350uyppOvaoHIwxynFuWAE26cnC9-Tlw&passive=1209600&flowName=GlifWebSignIn&flowEntry=ServiceLogin

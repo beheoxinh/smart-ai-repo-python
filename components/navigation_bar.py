@@ -1,16 +1,16 @@
-import os
 import json
-import requests
+import os
 
-from PyQt6.QtWidgets import (
-    QFrame, QVBoxLayout, QPushButton, QSpacerItem,
-    QSizePolicy, QMenu, QInputDialog, QApplication, QMessageBox
-)
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint
 from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import (
+    QFrame, QVBoxLayout, QPushButton, QSpacerItem,
+    QSizePolicy, QMenu, QApplication, QMessageBox
+)
 
 from components.menu_setting_dialog import MenuSettingDialog
-from utils import AppPaths # Import AppPaths
+from utils import AppPaths  # Import AppPaths
+
 
 class NavigationBar(QFrame):
     refreshClicked = pyqtSignal()
@@ -18,6 +18,7 @@ class NavigationBar(QFrame):
     forwardClicked = pyqtSignal()
     clearCacheRequested = pyqtSignal()
     navigationClicked = pyqtSignal(str)
+    closeClicked = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -43,6 +44,29 @@ class NavigationBar(QFrame):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(5, 0, 5, 0)
         self.main_layout.setSpacing(20)
+
+        # Close button at the top
+        self.close_btn = QPushButton("×")
+        self.close_btn.setFixedSize(50, 40)
+        self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.close_btn.clicked.connect(self.closeClicked.emit)
+        self.close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #888888;
+                border: none;
+                font-size: 24px;
+                font-weight: bold;
+                padding: 0;
+                margin: 0;
+            }
+            QPushButton:hover {
+                color: white;
+                background-color: #3A3A3A;
+                border-radius: 5px;
+            }
+        """)
+        self.main_layout.addWidget(self.close_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.center_layout = QVBoxLayout()
         self.center_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
