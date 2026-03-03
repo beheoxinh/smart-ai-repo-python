@@ -4,45 +4,39 @@ import sys
 from PyQt6.QtWidgets import QMessageBox
 
 class AppPaths:
-    def __init__(self, app_name="SmartAI", app_author="Hsx2"):
-        self.app_name = app_name
-        self.app_author = app_author
+    def __init__(self, app_name=".smartAI"):
+        # The root for all app data is now %USERPROFILE%/.smartAI
+        self.app_data_root = os.path.join(os.path.expanduser('~'), app_name)
         self.root_path = self._determine_root_path()
 
     def _determine_root_path(self):
+        # This still points to the application's installation directory
         if getattr(sys, 'frozen', False):
             return os.path.dirname(sys.executable)
         else:
             return os.path.dirname(os.path.abspath(__file__))
 
     def get_root(self):
+        # Returns the installation directory
         return self.root_path
 
     def get_path(self, *paths):
-        abs_path = os.path.join(self.root_path, *paths)
-        return abs_path
+        # Returns a path relative to the installation directory (e.g., for images)
+        return os.path.join(self.root_path, *paths)
 
     def get_data_dir(self, subfolder=None):
-        base_path = os.path.join(self.root_path, "data")
+        # All data now goes into the user profile directory
+        base_path = self.app_data_root
         if subfolder:
             base_path = os.path.join(base_path, subfolder)
         os.makedirs(base_path, exist_ok=True)
         return base_path
 
     def get_appdata_dir(self, subfolder=None):
-        if sys.platform == 'win32':
-            base_path = os.path.join(
-                os.environ.get('LOCALAPPDATA', os.path.expanduser('~\\AppData\\Local')),
-                self.app_author,
-                self.app_name
-            )
-        else:
-            base_path = os.path.expanduser(f'~/.local/share/{self.app_name}')
-
-        if subfolder:
-            base_path = os.path.join(base_path, subfolder)
-        os.makedirs(base_path, exist_ok=True)
-        return base_path
+        # DEPRECATED: This function now redirects to get_data_dir to ensure all data
+        # is stored in the new location.
+        print(f"Redirecting get_appdata_dir to get_data_dir for: {subfolder or 'root'}")
+        return self.get_data_dir(subfolder)
 
     def ensure_dir(self, dir_path):
         if not os.path.exists(dir_path):
@@ -50,7 +44,8 @@ class AppPaths:
         return dir_path
 
     def ensure_config_exists(self):
-        config_dir = os.path.join(self.root_path, 'config')
+        # Config also moves to the new data directory
+        config_dir = self.get_data_dir('config')
         self.ensure_dir(config_dir)
 
     def join_path(self, *paths):

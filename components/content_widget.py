@@ -41,20 +41,11 @@ class ContentWidget(QWidget):
         self.nav_bar.refreshClicked.connect(self.web_view.reload)
         self.nav_bar.backClicked.connect(self.web_view.back)
         self.nav_bar.forwardClicked.connect(self.web_view.forward)
-        # self.nav_bar.chatgptClicked.connect(lambda: self.set_and_save_url("https://chatgpt.com/"))
-        # self.nav_bar.claudeClicked.connect(lambda: self.set_and_save_url("https://claude.ai/"))
-        # self.nav_bar.mistralClicked.connect(lambda: self.set_and_save_url("https://chat.mistral.ai/"))
-        # self.nav_bar.copilotClicked.connect(lambda: self.set_and_save_url("https://copilot.microsoft.com/"))
-        # self.nav_bar.geminiClicked.connect(lambda: self.set_and_save_url("https://gemini.google.com/"))
-        # self.nav_bar.huggingClicked.connect(lambda: self.set_and_save_url("https://huggingface.co/chat/"))
         self.nav_bar.navigationClicked.connect(self.handle_navigation_click)
-        self.nav_bar.clearCacheRequested.connect(self.web_view.clear_cache)
+        # FIX: Connect to the correctly renamed method 'clear_http_cache'
+        self.nav_bar.clearCacheRequested.connect(self.web_view.clear_http_cache)
         self.nav_bar.closeClicked.connect(self.closeRequested.emit)
 
     def handle_navigation_click(self, url):
         self.web_view.setUrl(QUrl(url))
         self.web_view.save_last_url(url)
-
-    # def set_and_save_url(self, url):
-    #     self.web_view.setUrl(QUrl(url))
-    #     self.web_view.save_last_url(url)
