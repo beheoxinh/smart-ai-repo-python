@@ -5,6 +5,7 @@ import sys
 import traceback
 from urllib.parse import urlparse
 from uuid import UUID
+from datetime import datetime
 
 from PyQt6.QtCore import QUrl, Qt, pyqtSignal, QStandardPaths, QTimer
 from PyQt6.QtGui import QGuiApplication, QDesktopServices, QAction
@@ -66,6 +67,9 @@ class CustomWebEnginePage(QWebEnginePage):
         self.parent = parent
         self.auth_in_progress = False
         self.current_url = None
+        # It's better to get app_paths from the parent CustomWebView
+        self.app_paths = self.parent.app_paths if self.parent else AppPaths()
+
 
         actions_to_hide = [
             QWebEnginePage.WebAction.Back,
@@ -87,7 +91,32 @@ class CustomWebEnginePage(QWebEnginePage):
         return True
 
     def javaScriptConsoleMessage(self, level, message, line, sourceid):
-        pass
+        log_levels = {
+            QWebEnginePage.JavaScriptConsoleMessageLevel.InfoMessageLevel: "info",
+            QWebEnginePage.JavaScriptConsoleMessageLevel.WarningMessageLevel: "warning",
+            QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel: "error",
+        }
+        
+        if level in log_levels:
+            try:
+                level_str = log_levels[level]
+                log_dir = self.app_paths.get_data_dir("logs")
+                os.makedirs(log_dir, exist_ok=True)
+                
+                # Create a log file for each level
+                log_file_path = os.path.join(log_dir, f"{datetime.now().strftime('%Y-%m-%d')}-{level_str}.log")
+                
+                # Check file size, 20MB limit
+                if os.path.exists(log_file_path) and os.path.getsize(log_file_path) > 20 * 1024 * 1024:
+                    return
+
+                with open(log_file_path, "a", encoding="utf-8") as f:
+                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    # No need to write the level inside the file anymore as it's in the filename
+                    f.write(f"[{timestamp}] Message: {message}, Line: {line}, SourceID: {sourceid}\n")
+            except Exception as e:
+                print(f"Failed to write to log file: {e}")
+
 
     def acceptNavigationRequest(self, url, _type, isMainFrame):
         url_str = url.toString()
@@ -233,15 +262,25 @@ class CustomWebView(QWebEngineView):
     def clear_http_cache(self):
         try:
             self.page().profile().clearHttpCache()
-            print("HTTP cache cleared (cookies preserved).")
+            print("HTTP cache cleared.")
         except Exception as e:
             print(f"Error clearing HTTP cache: {e}")
+
+    def clear_site_data(self):
+        try:
+            self.page().profile().clearAllVisitedLinks()
+            self.page().profile().clearHttpCache()
+            self.page().profile().cookieStore().deleteAllCookies()
+            print("Cleared all site data (cache, cookies, history).")
+        except Exception as e:
+            print(f"Error clearing site data: {e}")
 
     def setup_profile(self):
         # This now correctly uses the new path from AppPaths
         cache_path = self.app_paths.get_data_dir("cache")
         self.profile.setCachePath(cache_path)
         self.profile.setPersistentStoragePath(cache_path)
+        self.profile.setHttpCacheMaximumSize(512 * 1024 * 1024) # 512 MB
         self.profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
         self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
         self.profile.downloadRequested.connect(self.handle_download_requested)
@@ -258,6 +297,9 @@ class CustomWebView(QWebEngineView):
             QWebEngineSettings.WebAttribute.AutoLoadImages,
             QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard,
             QWebEngineSettings.WebAttribute.DnsPrefetchEnabled,
+            QWebEngineSettings.WebAttribute.WebGLEnabled,
+            QWebEngineSettings.WebAttribute.Accelerated2dCanvasEnabled,
+            QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled,
         ]
         for attr in essential_attributes:
             settings.setAttribute(attr, True)
@@ -273,9 +315,6 @@ class CustomWebView(QWebEngineView):
             settings.setAttribute(attr, True)
 
         problematic_attributes = [
-            QWebEngineSettings.WebAttribute.WebGLEnabled,
-            QWebEngineSettings.WebAttribute.Accelerated2dCanvasEnabled,
-            QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled,
             QWebEngineSettings.WebAttribute.ScreenCaptureEnabled,
             QWebEngineSettings.WebAttribute.XSSAuditingEnabled,
         ]

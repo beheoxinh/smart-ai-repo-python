@@ -17,6 +17,7 @@ class NavigationBar(QFrame):
     backClicked = pyqtSignal()
     forwardClicked = pyqtSignal()
     clearCacheRequested = pyqtSignal()
+    clearSiteDataRequested = pyqtSignal()
     navigationClicked = pyqtSignal(str)
     closeClicked = pyqtSignal()
 
@@ -157,7 +158,9 @@ class NavigationBar(QFrame):
         """)
         edit_action = menu.addAction("Edit")
         delete_action = menu.addAction("Delete")
+        menu.addSeparator()
         clear_cache_action = menu.addAction("Clear Cache")
+        clear_site_data_action = menu.addAction("Clear Site Data")
 
         action = menu.exec(button.mapToGlobal(QPoint(0, button.height())))
 
@@ -167,6 +170,8 @@ class NavigationBar(QFrame):
             self.delete_button(button)
         elif action == clear_cache_action:
             self.clearCacheRequested.emit()
+        elif action == clear_site_data_action:
+            self.clearSiteDataRequested.emit()
 
     def edit_button(self, button):
         self.parent().dialog_open = True

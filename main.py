@@ -7,6 +7,32 @@ if sys.stderr is None:
 if sys.stdout is None:
     sys.stdout = open(os.devnull, 'w')
 
+# --- ULTIMATE FLAGS - SET THIS BEFORE ANY QT IMPORTS ---
+# This is the most aggressive configuration to ensure compatibility.
+os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
+    # "--no-sandbox "
+    # --- The "Nuclear Option" for bypassing security policies ---
+    "--disable-web-security "
+    "--disable-site-isolation-trials "
+    "--disable-features=site-per-process,SitePerProcess,CrossSiteRedirectBlockingAlways,CrossSiteDocumentBlockingAlways "
+    "--disable-blink-features=BlockCredentialedSubresources "
+
+    # --- Stability & Performance Flags ---
+    "--disable-features=InterestCohort,RenderDocument,AudioServiceOutOfProcess "
+    "--disable-ipc-flooding-protection "
+    "--disable-translate "
+    "--disable-sync "
+    "--disable-background-networking "
+    "--disable-component-update "
+    "--ignore-gpu-blocklist "
+    "--enable-accelerated-video-decode "
+    "--enable-oop-rasterization "
+    "--disable-gpu-vsync "
+    "--enable-features=BackForwardCache"
+)
+
+
 import logging
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
@@ -16,16 +42,6 @@ import traceback
 import faulthandler
 faulthandler.enable()
 
-# Disable sandbox and set simplified, stable Chromium flags
-os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
-os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
-    "--no-sandbox "
-    "--disable-features=InterestCohort,RenderDocument,AudioServiceOutOfProcess "
-    "--disable-translate "
-    "--disable-sync "
-    "--disable-background-networking "
-    "--disable-component-update "
-)
 
 # Cấu hình logging
 log_format = '%(asctime)s - %(levelname)s - %(message)s'
