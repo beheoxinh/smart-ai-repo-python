@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 
 from PyQt6.QtCore import Qt, pyqtSignal, QPoint
 from PyQt6.QtGui import QIcon
@@ -26,8 +27,8 @@ class NavigationBar(QFrame):
         self.buttons = []
         self.button_data = []
         self.drag_start_pos = None
-        # Use AppPaths for config_path
-        self.config_path = self.app_paths.get_path('config', 'nav_config.json')
+        # Use the correct path for user-specific config data
+        self.config_path = os.path.join(self.app_paths.get_data_dir('config'), 'nav_config.json')
         self.setup_ui()
         self.load_config()
 
@@ -266,9 +267,22 @@ class NavigationBar(QFrame):
             self.center_layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignHCenter)
 
     def load_config(self):
-        # Ensure config directory exists
+        # Ensure the user's config directory exists
         self.app_paths.ensure_config_exists()
-        
+
+        # If the user's config file doesn't exist, copy the default one
+        if not os.path.exists(self.config_path):
+            default_config_path = self.app_paths.get_path('config', 'nav_config.json')
+            if os.path.exists(default_config_path):
+                try:
+                    shutil.copy2(default_config_path, self.config_path)
+                except Exception as e:
+                    print(f"Could not copy default config: {e}")
+                    self.button_data = []
+                    self.rebuild_layout_from_config()
+                    return
+
+        # Now, load from the user's config file
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 self.button_data = json.load(f)
@@ -286,6 +300,7 @@ class NavigationBar(QFrame):
 
         # Add new buttons from config
         for data in self.button_data:
+            # Icons for nav buttons should always come from the bundled resources
             icon_full_path = self.app_paths.get_path('images', data['icon'])
             btn = self.add_button(icon_full_path, data['tooltip'], data['url'])
             self.center_layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -303,8 +318,9 @@ class NavigationBar(QFrame):
         is_used = any(data['icon'] == icon_filename for data in self.button_data)
         if not is_used:
             try:
-                icon_path = self.app_paths.get_path('images', icon_filename)
-                if os.path.exists(icon_path):
-                    os.remove(icon_path)
+                # Icons are part of the bundled app, so we don't delete them from the user's data dir
+                # Instead, we check the source images folder if needed, but cleanup is tricky
+                # For now, we just don't delete them to be safe
+                pass
             except Exception as e:
-                print(f"Error removing icon: {e}")
+                print(f"Error during icon cleanup check: {e}")

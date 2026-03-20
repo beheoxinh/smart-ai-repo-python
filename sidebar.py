@@ -13,6 +13,7 @@ from PyQt6.QtGui import QCursor, QShortcut, QKeySequence
 
 from components.resize_handle import ResizeHandle
 from components.content_widget import ContentWidget
+from components.bottom_bar import BottomBar
 from utils import alert_popup # Import alert_popup
 
 class Sidebar(QMainWindow):
@@ -32,7 +33,7 @@ class Sidebar(QMainWindow):
         self.setup_shortcut()
 
     def calculate_width(self, screen_width):
-        return int(screen_width * 0.6)
+        return int(screen_width * 0.5)
 
     def setup_shortcut(self):
         shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
@@ -66,6 +67,9 @@ class Sidebar(QMainWindow):
 
             self.content_widget = ContentWidget()
             main_layout.addWidget(self.content_widget)
+
+            self.bottom_bar = BottomBar()
+            main_layout.addWidget(self.bottom_bar)
 
             self.content_widget.closeRequested.connect(self.hide_sidebar)
             self.content_widget.web_view.popupCreated.connect(self.handle_popup_created)
@@ -336,14 +340,18 @@ class Sidebar(QMainWindow):
         try:
             if not self.active_screen: return
             
-            # Use availableGeometry to prevent the sidebar from hiding under the top bar or dock
             screen_geometry = self.active_screen.availableGeometry()
+
+            bottom_margin = 64
+
+            new_y = screen_geometry.y()
+            new_height = screen_geometry.height() - bottom_margin
 
             self.setGeometry(
                 screen_geometry.x() + screen_geometry.width() - self.width(),
-                screen_geometry.y(),
+                new_y,
                 self.width(),
-                screen_geometry.height()
+                new_height
             )
         except Exception as e:
             alert_popup(self, "Update Position Error", f"Error updating window position: {e}")

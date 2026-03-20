@@ -10,10 +10,12 @@ class AppPaths:
         self.root_path = self._determine_root_path()
 
     def _determine_root_path(self):
-        # This still points to the application's installation directory
-        if getattr(sys, 'frozen', False):
-            return os.path.dirname(sys.executable)
+        """Determines the correct root path for resources."""
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            # Running as a bundled executable (PyInstaller)
+            return sys._MEIPASS
         else:
+            # Running from source
             return os.path.dirname(os.path.abspath(__file__))
 
     def get_root(self):
