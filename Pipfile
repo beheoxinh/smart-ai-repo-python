@@ -6,10 +6,10 @@ name = "pypi"
 [packages]
 PyQt6 = "*"
 PyQt6-WebEngine = "*"
-pywin32 = "*"
+pyinstaller = "*"
+requests = "*"
 
 [dev-packages]
 
 [requires]
-python_version = "3.13"
-python_full_version = "3.13.5"
+python_version = "3.12"

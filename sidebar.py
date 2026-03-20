@@ -1,7 +1,13 @@
-# File: components/sidebar.py (Original version, before show/hide modifications)
-import win32gui
-import win32api
-from PyQt6.QtCore import Qt, QTimer, QPoint, QEvent, QPropertyAnimation, QUrl
+# File: components/sidebar.py (Cross-platform version)
+import sys
+try:
+    import win32gui
+    import win32api
+except ImportError:
+    win32gui = None
+    win32api = None
+
+from PyQt6.QtCore import Qt, QTimer, QPoint, QEvent, QPropertyAnimation, QUrl, QEasingCurve
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QApplication
 from PyQt6.QtGui import QCursor, QShortcut, QKeySequence
 
@@ -21,6 +27,7 @@ class Sidebar(QMainWindow):
         self.has_active_popup = False
         self.popup_windows = []
         self.last_width = None
+        self.fade_animation = None # Keep track of current animation
         self.init_ui()
         self.setup_shortcut()
 
@@ -33,11 +40,16 @@ class Sidebar(QMainWindow):
 
     def init_ui(self):
         try:
+            # Added Qt.WindowType.BypassWindowManagerHint to avoid snapping/dock interference on Linux (GNOME/KDE)
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint |
                 Qt.WindowType.Tool |
-                Qt.WindowType.WindowStaysOnTopHint
+                Qt.WindowType.WindowStaysOnTopHint |
+                Qt.WindowType.BypassWindowManagerHint 
             )
+            # Remove transparent background to avoid flickering with Wayland/GNOME compositor
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+            
             self.installEventFilter(self)
             container = QWidget()
             container_layout = QHBoxLayout(container)
@@ -65,7 +77,8 @@ class Sidebar(QMainWindow):
 
             primary_screen = QApplication.primaryScreen()
             if primary_screen:
-                self.setFixedWidth(self.calculate_width(primary_screen.geometry().width()))
+                # Use availableGeometry to avoid overlapping with GNOME top bar and dock
+                self.setFixedWidth(self.calculate_width(primary_screen.availableGeometry().width()))
 
             self.update_rightmost_screen()
 
@@ -87,7 +100,8 @@ class Sidebar(QMainWindow):
         try:
             screens = QApplication.screens()
             if screens:
-                self.rightmost_screen = max(screens, key=lambda s: s.geometry().x() + s.geometry().width())
+                # Use availableGeometry to find the rightmost working area
+                self.rightmost_screen = max(screens, key=lambda s: s.availableGeometry().x() + s.availableGeometry().width())
             else:
                 self.rightmost_screen = None
         except Exception as e:
@@ -143,6 +157,8 @@ class Sidebar(QMainWindow):
 
     def is_foreground_fullscreen(self, screen):
         try:
+            if not win32gui: return False # Skip on non-Windows
+            
             hwnd = win32gui.GetForegroundWindow()
             if not hwnd: return False
             class_name = win32gui.GetClassName(hwnd)
@@ -155,8 +171,6 @@ class Sidebar(QMainWindow):
                     abs(rect[2] - rect[0] - screen_geo.width()) <= 1 and
                     abs(rect[3] - rect[1] - screen_geo.height()) <= 1)
         except Exception as e:
-            # This function is called frequently, so just log and return False
-            # print(f"Error checking fullscreen: {e}")
             return False
 
     def check_mouse(self):
@@ -171,7 +185,7 @@ class Sidebar(QMainWindow):
                 return
 
             screen = self.rightmost_screen
-            screen_geo = screen.geometry()
+            screen_geo = screen.availableGeometry() # Check against available working area
 
             if not self.is_visible:
                 right_edge = screen_geo.x() + screen_geo.width()
@@ -191,15 +205,25 @@ class Sidebar(QMainWindow):
 
             else:
                 if not self.frameGeometry().contains(cursor_pos):
-                    left_state = win32api.GetKeyState(0x01)
-                    right_state = win32api.GetKeyState(0x02)
-                    middle_state = win32api.GetKeyState(0x04)
+                    if win32api:
+                        left_state = win32api.GetKeyState(0x01)
+                        right_state = win32api.GetKeyState(0x02)
+                        middle_state = win32api.GetKeyState(0x04)
 
-                    if left_state < 0 or right_state < 0 or middle_state < 0:
-                        self.hide_sidebar()
+                        if left_state < 0 or right_state < 0 or middle_state < 0:
+                            self.hide_sidebar()
+                    else:
+                        # Fallback for Linux/macOS
+                        # On Linux, QApplication.mouseButtons() only registers clicks INSIDE the app window.
+                        # It cannot detect clicks outside to hide the sidebar.
+                        # We change the behavior: If the mouse simply leaves the bounding box of the sidebar, hide it.
+                        # Adding a tiny buffer to avoid jitter at the edge
+                        rect = self.frameGeometry()
+                        buffer = 10
+                        if not (rect.x() - buffer <= cursor_pos.x() <= rect.x() + rect.width() + buffer and
+                                rect.y() - buffer <= cursor_pos.y() <= rect.y() + rect.height() + buffer):
+                            self.hide_sidebar()
         except Exception as e:
-            # This function is called frequently, so just log and return silently
-            # alert_popup(self, "Mouse Check Error", f"Error in check_mouse: {e}")
             pass
 
     def toggle_sidebar(self):
@@ -218,13 +242,19 @@ class Sidebar(QMainWindow):
     def show_sidebar(self):
         try:
             if self.is_visible: return
+            
+            # Stop any ongoing hide animation
+            if self.fade_animation and self.fade_animation.state() == QPropertyAnimation.State.Running:
+                self.fade_animation.stop()
+
             self.setWindowOpacity(0.0)
             self.show()
             self.raise_()
             self.activateWindow()
 
             self.fade_animation = QPropertyAnimation(self, b"windowOpacity")
-            self.fade_animation.setDuration(100)
+            self.fade_animation.setDuration(150) # Slightly slower for smoothness
+            self.fade_animation.setEasingCurve(QEasingCurve.Type.InOutQuad) # Add easing curve
             self.fade_animation.setStartValue(0.0)
             self.fade_animation.setEndValue(1.0)
             self.fade_animation.start()
@@ -234,10 +264,19 @@ class Sidebar(QMainWindow):
 
     def hide_sidebar(self):
         try:
-            if self.is_resizing or not self.isVisible(): return
+            # If already hiding/hidden, do nothing
+            if self.is_resizing or not self.is_visible: return
+            if self.fade_animation and self.fade_animation.state() == QPropertyAnimation.State.Running and self.fade_animation.endValue() == 0.0:
+                return
+
+            # Stop any ongoing show animation
+            if self.fade_animation and self.fade_animation.state() == QPropertyAnimation.State.Running:
+                self.fade_animation.stop()
+
             self.fade_animation = QPropertyAnimation(self, b"windowOpacity")
-            self.fade_animation.setDuration(100)
-            self.fade_animation.setStartValue(1.0)
+            self.fade_animation.setDuration(150) # Slightly slower for smoothness
+            self.fade_animation.setEasingCurve(QEasingCurve.Type.InOutQuad) # Add easing curve
+            self.fade_animation.setStartValue(self.windowOpacity())
             self.fade_animation.setEndValue(0.0)
 
             def after_hide():
@@ -255,8 +294,6 @@ class Sidebar(QMainWindow):
 
     def closeEvent(self, event):
         try:
-            # Original code had self.parent, but Sidebar is QMainWindow, not a child.
-            # Removed self.parent check.
             self.content_widget.web_view.deleteLater()
             event.accept()
         except Exception as e:
@@ -265,8 +302,8 @@ class Sidebar(QMainWindow):
     def get_current_screen_width(self):
         try:
             if self.active_screen:
-                return self.active_screen.geometry().width()
-            return QApplication.primaryScreen().geometry().width()
+                return self.active_screen.availableGeometry().width()
+            return QApplication.primaryScreen().availableGeometry().width()
         except Exception as e:
             alert_popup(self, "Screen Width Error", f"Error getting current screen width: {e}")
             return 0 # Return a safe default
@@ -274,10 +311,6 @@ class Sidebar(QMainWindow):
     def resizing_started(self):
         try:
             self.is_resizing = True
-            # Original code did not stop timer here.
-            # For stability, it's safer to stop the timer during resize.
-            # However, user explicitly asked not to change show/hide logic.
-            # So, reverting to original behavior for this part.
         except Exception as e:
             alert_popup(self, "Resize Error", f"Error starting resize: {e}")
 
@@ -285,10 +318,6 @@ class Sidebar(QMainWindow):
         try:
             self.is_resizing = False
             self.last_width = self.width()
-            # Original code did not restart timer here.
-            # For stability, it's safer to restart the timer after resize.
-            # However, user explicitly asked not to change show/hide logic.
-            # So, reverting to original behavior for this part.
         except Exception as e:
             alert_popup(self, "Resize Error", f"Error finishing resize: {e}")
 
@@ -306,9 +335,10 @@ class Sidebar(QMainWindow):
     def update_position(self):
         try:
             if not self.active_screen: return
-            screen_geometry = self.active_screen.geometry()
-            # Original code did not calculate taskbar height here.
-            # Reverting to original behavior.
+            
+            # Use availableGeometry to prevent the sidebar from hiding under the top bar or dock
+            screen_geometry = self.active_screen.availableGeometry()
+
             self.setGeometry(
                 screen_geometry.x() + screen_geometry.width() - self.width(),
                 screen_geometry.y(),
@@ -318,22 +348,10 @@ class Sidebar(QMainWindow):
         except Exception as e:
             alert_popup(self, "Update Position Error", f"Error updating window position: {e}")
 
-    # Original get_taskbar_height was not present in the initial version.
-    # Removed it to fully rollback.
-    # def get_taskbar_height(self):
-    #     try:
-    #         taskbar = win32gui.FindWindow('Shell_TrayWnd', None)
-    #         if taskbar:
-    #             rect = win32gui.GetWindowRect(taskbar)
-    #             return rect[3] - rect[1]
-    #     except:
-    #         pass
-    #     return 0
-
     def moveEvent(self, event):
         try:
-            if self.active_screen:
-                self.update_position()
+            # Prevent moveEvent from constantly updating position when the window manager tries to dock it
+            pass
         except Exception as e:
             alert_popup(self, "Move Event Error", f"Error during move event: {e}")
 

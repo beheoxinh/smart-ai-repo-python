@@ -2,6 +2,11 @@
 import os
 import sys
 
+# --- Platform Detection ---
+# Check for Wayland and set the appropriate Qt backend
+if os.environ.get("XDG_SESSION_TYPE") == "wayland":
+    os.environ["QT_QPA_PLATFORM"] = "wayland"
+
 if sys.stderr is None:
     sys.stderr = open(os.devnull, 'w')
 if sys.stdout is None:
@@ -9,7 +14,7 @@ if sys.stdout is None:
 
 import logging
 from PyQt6.QtGui import QAction, QIcon
-from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
+from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from utils import AppPaths
 from sidebar import Sidebar
 import traceback
