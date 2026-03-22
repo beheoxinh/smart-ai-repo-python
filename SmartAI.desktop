@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=SmartAI
+Exec=/usr/local/bin/smart-ai
+Icon=/home/WannaBeTheGuy/WwW/MyOwn/python_ai_sidebar/icon.svg
+Type=Application
+Categories=Development;

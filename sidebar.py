@@ -41,12 +41,11 @@ class Sidebar(QMainWindow):
 
     def init_ui(self):
         try:
-            # Added Qt.WindowType.BypassWindowManagerHint to avoid snapping/dock interference on Linux (GNOME/KDE)
+            # BypassWindowManagerHint removed for better compatibility on some Linux WMs
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint |
                 Qt.WindowType.Tool |
-                Qt.WindowType.WindowStaysOnTopHint |
-                Qt.WindowType.BypassWindowManagerHint 
+                Qt.WindowType.WindowStaysOnTopHint
             )
             # Remove transparent background to avoid flickering with Wayland/GNOME compositor
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
@@ -81,8 +80,8 @@ class Sidebar(QMainWindow):
 
             primary_screen = QApplication.primaryScreen()
             if primary_screen:
-                # Use availableGeometry to avoid overlapping with GNOME top bar and dock
-                self.setFixedWidth(self.calculate_width(primary_screen.availableGeometry().width()))
+                # Use geometry() to get full screen width
+                self.setFixedWidth(self.calculate_width(primary_screen.geometry().width()))
 
             self.update_rightmost_screen()
 
@@ -104,8 +103,8 @@ class Sidebar(QMainWindow):
         try:
             screens = QApplication.screens()
             if screens:
-                # Use availableGeometry to find the rightmost working area
-                self.rightmost_screen = max(screens, key=lambda s: s.availableGeometry().x() + s.availableGeometry().width())
+                # Use geometry() to find the rightmost screen
+                self.rightmost_screen = max(screens, key=lambda s: s.geometry().x() + s.geometry().width())
             else:
                 self.rightmost_screen = None
         except Exception as e:
@@ -120,6 +119,8 @@ class Sidebar(QMainWindow):
 
     def eventFilter(self, obj, event):
         try:
+            # The custom FocusOut handler was removed as it can interfere with
+            # standard window manager behavior on some Linux distributions.
             if event.type() == QEvent.Type.MouseButtonPress:
                 if self.dialog_open:
                     return False
@@ -189,12 +190,12 @@ class Sidebar(QMainWindow):
                 return
 
             screen = self.rightmost_screen
-            screen_geo = screen.availableGeometry() # Check against available working area
+            screen_geo = screen.geometry() # Check against physical screen
 
             if not self.is_visible:
                 right_edge = screen_geo.x() + screen_geo.width()
                 is_at_edge = (cursor_pos.x() >= right_edge - 2)
-                is_vertically_inside = (screen_geo.y() <= cursor_pos.y() <= screen_geo.y() + screen_geo.height())
+                is_vertically_inside = (screen_geo.y() <= cursor_pos.y() <= screen_geo.y() + screen_geo.y() + screen_geo.height())
 
                 if is_at_edge and is_vertically_inside:
                     if self.is_foreground_fullscreen(screen):
@@ -203,7 +204,6 @@ class Sidebar(QMainWindow):
                     self.active_screen = screen
                     if not self.is_resizing:
                         self.setFixedWidth(self.last_width or self.calculate_width(screen_geo.width()))
-                    self.update_position()
                     self.show_sidebar()
                     return
 
@@ -238,7 +238,6 @@ class Sidebar(QMainWindow):
                 screen = self.get_screen_at_cursor()
                 if screen:
                     self.active_screen = screen
-                    self.update_position()
                     self.show_sidebar()
         except Exception as e:
             alert_popup(self, "Toggle Sidebar Error", f"Error toggling sidebar visibility: {e}")
@@ -247,18 +246,21 @@ class Sidebar(QMainWindow):
         try:
             if self.is_visible: return
             
-            # Stop any ongoing hide animation
             if self.fade_animation and self.fade_animation.state() == QPropertyAnimation.State.Running:
                 self.fade_animation.stop()
+
+            self.update_position()
 
             self.setWindowOpacity(0.0)
             self.show()
             self.raise_()
             self.activateWindow()
 
+            QTimer.singleShot(1, self.update_position)
+
             self.fade_animation = QPropertyAnimation(self, b"windowOpacity")
-            self.fade_animation.setDuration(150) # Slightly slower for smoothness
-            self.fade_animation.setEasingCurve(QEasingCurve.Type.InOutQuad) # Add easing curve
+            self.fade_animation.setDuration(150)
+            self.fade_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
             self.fade_animation.setStartValue(0.0)
             self.fade_animation.setEndValue(1.0)
             self.fade_animation.start()
@@ -268,18 +270,16 @@ class Sidebar(QMainWindow):
 
     def hide_sidebar(self):
         try:
-            # If already hiding/hidden, do nothing
             if self.is_resizing or not self.is_visible: return
             if self.fade_animation and self.fade_animation.state() == QPropertyAnimation.State.Running and self.fade_animation.endValue() == 0.0:
                 return
 
-            # Stop any ongoing show animation
             if self.fade_animation and self.fade_animation.state() == QPropertyAnimation.State.Running:
                 self.fade_animation.stop()
 
             self.fade_animation = QPropertyAnimation(self, b"windowOpacity")
-            self.fade_animation.setDuration(150) # Slightly slower for smoothness
-            self.fade_animation.setEasingCurve(QEasingCurve.Type.InOutQuad) # Add easing curve
+            self.fade_animation.setDuration(150)
+            self.fade_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
             self.fade_animation.setStartValue(self.windowOpacity())
             self.fade_animation.setEndValue(0.0)
 
@@ -289,7 +289,7 @@ class Sidebar(QMainWindow):
                 try:
                     self.fade_animation.finished.disconnect(after_hide)
                 except TypeError:
-                    pass # Already disconnected
+                    pass
 
             self.fade_animation.finished.connect(after_hide)
             self.fade_animation.start()
@@ -306,11 +306,11 @@ class Sidebar(QMainWindow):
     def get_current_screen_width(self):
         try:
             if self.active_screen:
-                return self.active_screen.availableGeometry().width()
-            return QApplication.primaryScreen().availableGeometry().width()
+                return self.active_screen.geometry().width()
+            return QApplication.primaryScreen().geometry().width()
         except Exception as e:
             alert_popup(self, "Screen Width Error", f"Error getting current screen width: {e}")
-            return 0 # Return a safe default
+            return 0
 
     def resizing_started(self):
         try:
@@ -339,26 +339,21 @@ class Sidebar(QMainWindow):
     def update_position(self):
         try:
             if not self.active_screen: return
-            
-            screen_geometry = self.active_screen.availableGeometry()
 
+            screen_geometry = self.active_screen.geometry()
             bottom_margin = 64
-
-            new_y = screen_geometry.y()
-            new_height = screen_geometry.height() - bottom_margin
 
             self.setGeometry(
                 screen_geometry.x() + screen_geometry.width() - self.width(),
-                new_y,
+                screen_geometry.y(),
                 self.width(),
-                new_height
+                screen_geometry.height() - bottom_margin
             )
         except Exception as e:
             alert_popup(self, "Update Position Error", f"Error updating window position: {e}")
 
     def moveEvent(self, event):
         try:
-            # Prevent moveEvent from constantly updating position when the window manager tries to dock it
             pass
         except Exception as e:
             alert_popup(self, "Move Event Error", f"Error during move event: {e}")
