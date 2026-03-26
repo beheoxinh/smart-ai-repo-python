@@ -41,13 +41,11 @@ class Sidebar(QMainWindow):
 
     def init_ui(self):
         try:
-            # BypassWindowManagerHint removed for better compatibility on some Linux WMs
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint |
                 Qt.WindowType.Tool |
                 Qt.WindowType.WindowStaysOnTopHint
             )
-            # Remove transparent background to avoid flickering with Wayland/GNOME compositor
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
             
             self.installEventFilter(self)
@@ -80,14 +78,13 @@ class Sidebar(QMainWindow):
 
             primary_screen = QApplication.primaryScreen()
             if primary_screen:
-                # Use geometry() to get full screen width
                 self.setFixedWidth(self.calculate_width(primary_screen.geometry().width()))
 
-            self.update_rightmost_screen()
+            self.active_screen = QApplication.primaryScreen()
 
             self.mouse_timer = QTimer()
             self.mouse_timer.timeout.connect(self.check_mouse)
-            self.mouse_timer.start(100) # Original interval
+            self.mouse_timer.start(100)
 
             self.setStyleSheet("""
                 QMainWindow {
@@ -97,18 +94,7 @@ class Sidebar(QMainWindow):
             self.hide()
         except Exception as e:
             alert_popup(self, "Sidebar Initialization Error", f"Failed to initialize sidebar UI: {e}")
-            raise # Re-raise to propagate to main.py
-
-    def update_rightmost_screen(self):
-        try:
-            screens = QApplication.screens()
-            if screens:
-                # Use geometry() to find the rightmost screen
-                self.rightmost_screen = max(screens, key=lambda s: s.geometry().x() + s.geometry().width())
-            else:
-                self.rightmost_screen = None
-        except Exception as e:
-            alert_popup(self, "Screen Update Error", f"Failed to update rightmost screen: {e}")
+            raise
 
     def handle_navigation(self, url):
         try:
@@ -119,16 +105,13 @@ class Sidebar(QMainWindow):
 
     def eventFilter(self, obj, event):
         try:
-            # The custom FocusOut handler was removed as it can interfere with
-            # standard window manager behavior on some Linux distributions.
             if event.type() == QEvent.Type.MouseButtonPress:
                 if self.dialog_open:
                     return False
-                pass
             return super().eventFilter(obj, event)
         except Exception as e:
             alert_popup(self, "Event Filter Error", f"Error in event filter: {e}")
-            return False # Prevent event from being processed further
+            return False
 
     def handle_popup_created(self, popup_window):
         try:
@@ -145,7 +128,7 @@ class Sidebar(QMainWindow):
                 self.popup_windows.remove(popup)
             if not self.popup_windows:
                 self.has_active_popup = False
-                self.mouse_timer.start(100) # Original interval
+                self.mouse_timer.start(100)
         except Exception as e:
             alert_popup(self, "Popup Error", f"Error handling popup closure: {e}")
 
@@ -156,13 +139,13 @@ class Sidebar(QMainWindow):
                     popup.close()
             self.popup_windows.clear()
             self.has_active_popup = False
-            self.mouse_timer.start(100) # Original interval
+            self.mouse_timer.start(100)
         except Exception as e:
             alert_popup(self, "WebView Redirect Error", f"Error handling webview redirect: {e}")
 
     def is_foreground_fullscreen(self, screen):
         try:
-            if not win32gui: return False # Skip on non-Windows
+            if not win32gui: return False
             
             hwnd = win32gui.GetForegroundWindow()
             if not hwnd: return False
@@ -184,49 +167,30 @@ class Sidebar(QMainWindow):
                 return
 
             cursor_pos = QCursor.pos()
-
-            self.update_rightmost_screen() # Original logic
-            if not self.rightmost_screen:
-                return
-
-            screen = self.rightmost_screen
-            screen_geo = screen.geometry() # Check against physical screen
+            screen = QApplication.screenAt(cursor_pos)
 
             if not self.is_visible:
+                if not screen:
+                    return
+
+                screen_geo = screen.geometry()
                 right_edge = screen_geo.x() + screen_geo.width()
                 is_at_edge = (cursor_pos.x() >= right_edge - 2)
-                is_vertically_inside = (screen_geo.y() <= cursor_pos.y() <= screen_geo.y() + screen_geo.y() + screen_geo.height())
+                is_vertically_inside = (screen_geo.y() <= cursor_pos.y() <= screen_geo.y() + screen_geo.height())
 
                 if is_at_edge and is_vertically_inside:
                     if self.is_foreground_fullscreen(screen):
                         return
-
+                    
                     self.active_screen = screen
                     if not self.is_resizing:
                         self.setFixedWidth(self.last_width or self.calculate_width(screen_geo.width()))
                     self.show_sidebar()
                     return
 
-            else:
+            else: # if sidebar is visible
                 if not self.frameGeometry().contains(cursor_pos):
-                    if win32api:
-                        left_state = win32api.GetKeyState(0x01)
-                        right_state = win32api.GetKeyState(0x02)
-                        middle_state = win32api.GetKeyState(0x04)
-
-                        if left_state < 0 or right_state < 0 or middle_state < 0:
-                            self.hide_sidebar()
-                    else:
-                        # Fallback for Linux/macOS
-                        # On Linux, QApplication.mouseButtons() only registers clicks INSIDE the app window.
-                        # It cannot detect clicks outside to hide the sidebar.
-                        # We change the behavior: If the mouse simply leaves the bounding box of the sidebar, hide it.
-                        # Adding a tiny buffer to avoid jitter at the edge
-                        rect = self.frameGeometry()
-                        buffer = 10
-                        if not (rect.x() - buffer <= cursor_pos.x() <= rect.x() + rect.width() + buffer and
-                                rect.y() - buffer <= cursor_pos.y() <= rect.y() + rect.height() + buffer):
-                            self.hide_sidebar()
+                    self.hide_sidebar()
         except Exception as e:
             pass
 
@@ -235,9 +199,8 @@ class Sidebar(QMainWindow):
             if self.is_visible:
                 self.hide_sidebar()
             else:
-                screen = self.get_screen_at_cursor()
-                if screen:
-                    self.active_screen = screen
+                self.active_screen = self.get_screen_at_cursor()
+                if self.active_screen:
                     self.show_sidebar()
         except Exception as e:
             alert_popup(self, "Toggle Sidebar Error", f"Error toggling sidebar visibility: {e}")
@@ -256,6 +219,7 @@ class Sidebar(QMainWindow):
             self.raise_()
             self.activateWindow()
 
+            # Force a reposition after showing, this is a robust way to handle stubborn window managers
             QTimer.singleShot(1, self.update_position)
 
             self.fade_animation = QPropertyAnimation(self, b"windowOpacity")
@@ -313,32 +277,28 @@ class Sidebar(QMainWindow):
             return 0
 
     def resizing_started(self):
-        try:
-            self.is_resizing = True
-        except Exception as e:
-            alert_popup(self, "Resize Error", f"Error starting resize: {e}")
+        self.is_resizing = True
 
     def resizing_finished(self):
-        try:
-            self.is_resizing = False
-            self.last_width = self.width()
-        except Exception as e:
-            alert_popup(self, "Resize Error", f"Error finishing resize: {e}")
+        self.is_resizing = False
+        self.last_width = self.width()
 
     def get_screen_at_cursor(self):
-        try:
-            cursor_pos = QCursor.pos()
-            for screen in QApplication.screens():
-                if screen.geometry().contains(cursor_pos):
-                    return screen
-            return None
-        except Exception as e:
-            alert_popup(self, "Screen Detection Error", f"Error getting screen at cursor: {e}")
-            return None
+        cursor_pos = QCursor.pos()
+        return QApplication.screenAt(cursor_pos)
 
     def update_position(self):
         try:
-            if not self.active_screen: return
+            # Always determine the screen based on the current cursor position
+            # This is more reliable than relying on a stored self.active_screen
+            current_screen = self.get_screen_at_cursor()
+            if not current_screen:
+                current_screen = QApplication.primaryScreen() # Fallback
+            
+            self.active_screen = current_screen
+
+            if self.windowHandle():
+                self.windowHandle().setScreen(self.active_screen)
 
             screen_geometry = self.active_screen.geometry()
             bottom_margin = 64
@@ -353,13 +313,7 @@ class Sidebar(QMainWindow):
             alert_popup(self, "Update Position Error", f"Error updating window position: {e}")
 
     def moveEvent(self, event):
-        try:
-            pass
-        except Exception as e:
-            alert_popup(self, "Move Event Error", f"Error during move event: {e}")
+        pass
 
     def dialog_open_set_false(self):
-        try:
-            self.dialog_open = False
-        except Exception as e:
-            alert_popup(self, "Dialog State Error", f"Error setting dialog_open to false: {e}")
+        self.dialog_open = False

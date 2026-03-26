@@ -2,10 +2,32 @@
 import os
 import sys
 
-# --- Platform Detection ---
-# Check for Wayland and set the appropriate Qt backend
+# --- Platform Detection & Early Setup ---
 if os.environ.get("XDG_SESSION_TYPE") == "wayland":
     os.environ["QT_QPA_PLATFORM"] = "wayland"
+
+# --- Stable Chromium Flags ---
+# These flags are chosen for broad compatibility and stability, avoiding experimental features
+# that can cause rendering issues on some systems.
+os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
+    "--no-sandbox "
+    # Performance & Stability
+    "--enable-gpu-rasterization "
+    "--ignore-gpu-blocklist "
+    # Resource Management
+    "--disable-background-networking "
+    "--disable-background-timer-throttling "
+    "--disable-renderer-backgrounding "
+    # Feature Reduction for Simplicity
+    "--disable-component-update "
+    "--disable-domain-reliability "
+    "--disable-features=InterestCohort,RenderDocument,AudioServiceOutOfProcess "
+    "--disable-sync "
+    "--disable-translate "
+    "--disable-breakpad "
+    "--disable-dev-shm-usage "
+)
 
 if sys.stderr is None:
     sys.stderr = open(os.devnull, 'w')
@@ -20,17 +42,6 @@ from sidebar import Sidebar
 import traceback
 import faulthandler
 faulthandler.enable()
-
-# Disable sandbox and set simplified, stable Chromium flags
-os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
-os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
-    "--no-sandbox "
-    "--disable-features=InterestCohort,RenderDocument,AudioServiceOutOfProcess "
-    "--disable-translate "
-    "--disable-sync "
-    "--disable-background-networking "
-    "--disable-component-update "
-)
 
 # Cấu hình logging
 log_format = '%(asctime)s - %(levelname)s - %(message)s'

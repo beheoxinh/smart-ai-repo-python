@@ -17,6 +17,7 @@ from PyQt6.QtWebEngineCore import (
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QMainWindow, QMenu, QMessageBox
+from PyQt6.QtNetwork import QNetworkProxyFactory
 
 from utils import AppPaths
 
@@ -177,6 +178,8 @@ class CustomWebView(QWebEngineView):
         self.app_paths = AppPaths()
         self.active_popups = []
         self.loaded = False
+        
+        QNetworkProxyFactory.setUseSystemConfiguration(True)
 
         self.setStyleSheet("""
             #customWebView { background-color: white; }
@@ -238,7 +241,6 @@ class CustomWebView(QWebEngineView):
             print(f"Error clearing HTTP cache: {e}")
 
     def setup_profile(self):
-        # This now correctly uses the new path from AppPaths
         cache_path = self.app_paths.get_data_dir("cache")
         self.profile.setCachePath(cache_path)
         self.profile.setPersistentStoragePath(cache_path)
@@ -251,36 +253,24 @@ class CustomWebView(QWebEngineView):
 
     def setup_settings(self):
         settings = self.settings()
-        essential_attributes = [
+        attributes_to_enable = [
             QWebEngineSettings.WebAttribute.JavascriptEnabled,
             QWebEngineSettings.WebAttribute.LocalStorageEnabled,
             QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows,
             QWebEngineSettings.WebAttribute.AutoLoadImages,
             QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard,
             QWebEngineSettings.WebAttribute.DnsPrefetchEnabled,
-        ]
-        for attr in essential_attributes:
-            settings.setAttribute(attr, True)
-
-        performance_attributes = [
             QWebEngineSettings.WebAttribute.WebRTCPublicInterfacesOnly,
             QWebEngineSettings.WebAttribute.FocusOnNavigationEnabled,
             QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture,
             QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls,
             QWebEngineSettings.WebAttribute.AllowWindowActivationFromJavaScript,
-        ]
-        for attr in performance_attributes:
-            settings.setAttribute(attr, True)
-
-        problematic_attributes = [
             QWebEngineSettings.WebAttribute.WebGLEnabled,
             QWebEngineSettings.WebAttribute.Accelerated2dCanvasEnabled,
             QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled,
-            QWebEngineSettings.WebAttribute.ScreenCaptureEnabled,
-            QWebEngineSettings.WebAttribute.XSSAuditingEnabled,
         ]
-        for attr in problematic_attributes:
-            settings.setAttribute(attr, False)
+        for attr in attributes_to_enable:
+            settings.setAttribute(attr, True)
 
         settings.setAttribute(QWebEngineSettings.WebAttribute.AllowRunningInsecureContent, False)
         settings.setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
@@ -311,7 +301,6 @@ class CustomWebView(QWebEngineView):
 
     def save_last_url(self, url):
         try:
-            # This now correctly uses the new path from AppPaths
             last_url_path = os.path.join(self.app_paths.get_data_dir(), 'lasturl')
             with open(last_url_path, "w", encoding="utf-8") as file:
                 file.write(url)
@@ -320,7 +309,6 @@ class CustomWebView(QWebEngineView):
 
     def load_last_url(self):
         try:
-            # This now correctly uses the new path from AppPaths
             last_url_path = os.path.join(self.app_paths.get_data_dir(), 'lasturl')
             if os.path.exists(last_url_path):
                 with open(last_url_path, "r", encoding="utf-8") as file:
@@ -377,11 +365,20 @@ class CustomWebView(QWebEngineView):
 
 
 class EnhancedBrowserInterceptor(QWebEngineUrlRequestInterceptor):
+    """
+    A more intelligent interceptor that only modifies the initial main frame request
+    to look like a standard browser, and leaves all other requests (e.g., API calls,
+    data streams, images) untouched to ensure stability and performance.
+    """
     def interceptRequest(self, info):
         try:
-            info.setHttpHeader(b"User-Agent", b"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
-            info.setHttpHeader(b"Accept-Language", b"en-US,en;q=0.9,vi;q=0.8")
-            if info.resourceType() in (QWebEngineUrlRequestInfo.ResourceType.ResourceTypeMainFrame, QWebEngineUrlRequestInfo.ResourceType.ResourceTypeSubFrame):
+            # Only modify the main frame request to set the User-Agent and initial headers.
+            if info.resourceType() == QWebEngineUrlRequestInfo.ResourceType.ResourceTypeMainFrame:
+                info.setHttpHeader(b"User-Agent", b"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+                info.setHttpHeader(b"Accept-Language", b"en-US,en;q=0.9,vi;q=0.8")
                 info.setHttpHeader(b"Accept", b"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+            
+            # For all other request types (like XHR, Fetch, scripts, images), we do not
+            # interfere. This is critical for stable streaming of AI responses.
         except Exception as e:
             print(f"Interceptor error: {e}")
