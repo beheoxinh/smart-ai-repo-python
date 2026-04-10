@@ -11,9 +11,10 @@ class AppPaths:
 
     def _determine_root_path(self):
         """Determines the correct root path for resources."""
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        if getattr(sys, 'frozen', False):
             # Running as a bundled executable (PyInstaller)
-            return sys._MEIPASS
+            # The executable is in the root of the dist folder
+            return os.path.dirname(sys.executable)
         else:
             # Running from source
             return os.path.dirname(os.path.abspath(__file__))

@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 from PyQt6.QtCore import QUrl, Qt, pyqtSignal, QStandardPaths, QTimer
-from PyQt6.QtGui import QGuiApplication, QDesktopServices, QAction
+from PyQt6.QtGui import QGuiApplication, QDesktopServices, QAction, QCursor
 from PyQt6.QtWebEngineCore import (
     QWebEnginePage,
     QWebEngineProfile,
@@ -16,35 +16,49 @@ from PyQt6.QtWebEngineCore import (
     QWebEngineUrlRequestInfo,
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QMainWindow, QMenu, QMessageBox
 from PyQt6.QtNetwork import QNetworkProxyFactory
+from PyQt6.QtWidgets import QMenu, QDialog, QVBoxLayout
 
 from utils import AppPaths
 
 
-class PopupWindow(QMainWindow):
+class PopupWindow(QDialog):
     popupClosed = pyqtSignal()
 
-    def __init__(self, profile, parent=None):
-        super().__init__(parent)
+    def __init__(self, profile):
+        super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        self.parent = parent
+        
+        # Use a layout for QDialog
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
 
         self.web_view = QWebEngineView(self)
         self.page = CustomWebEnginePage(profile, self)
         self.web_view.setPage(self.page)
-        self.setCentralWidget(self.web_view)
+        layout.addWidget(self.web_view)
+
         self.setWindowTitle("Loading...")
         self.setMinimumSize(800, 650)
+        
+        # Set flags to be a Tool window, like the sidebar, to ensure consistent window manager behavior
         self.setWindowFlags(
-            Qt.WindowType.Window | Qt.WindowType.WindowCloseButtonHint
+            Qt.WindowType.Tool | 
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.WindowCloseButtonHint
         )
 
-        screen = QGuiApplication.primaryScreen().geometry()
-        window_width = int(screen.width() * 0.75)
-        window_height = int(screen.height() * 0.75)
-        center_x = screen.x() + (screen.width() - window_width) // 2
-        center_y = screen.y() + (screen.height() - window_height) // 2
+        # Center the window on the active screen
+        screen = QGuiApplication.screenAt(QCursor.pos())
+        if not screen:
+            screen = QGuiApplication.primaryScreen()
+        
+        screen_geo = screen.geometry()
+        window_width = int(screen_geo.width() * 0.75)
+        window_height = int(screen_geo.height() * 0.75)
+        center_x = screen_geo.x() + (screen_geo.width() - window_width) // 2
+        center_y = screen_geo.y() + (screen_geo.height() - window_height) // 2
         self.setGeometry(center_x, center_y, window_width, window_height)
 
         self.page.authFinished.connect(self.close)
@@ -64,7 +78,6 @@ class CustomWebEnginePage(QWebEnginePage):
     def __init__(self, profile, parent=None):
         super().__init__(profile, parent)
         self._profile = profile
-        self.parent = parent
         self.auth_in_progress = False
         self.current_url = None
 
@@ -104,7 +117,7 @@ class CustomWebEnginePage(QWebEnginePage):
 
     def createWindow(self, window_type):
         try:
-            popup = PopupWindow(self._profile, self.parent)
+            popup = PopupWindow(self._profile)
             popup.page.auth_in_progress = True
             popup.show()
             self.popupCreated.emit(popup)
@@ -247,7 +260,7 @@ class CustomWebView(QWebEngineView):
         self.profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
         self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
         self.profile.downloadRequested.connect(self.handle_download_requested)
-        self.profile.setSpellCheckEnabled(True)
+        self.profile.setSpellCheckEnabled(False) # Disabled spell checking
         self.profile.setSpellCheckLanguages(['en-US'])
         self.profile.setUrlRequestInterceptor(EnhancedBrowserInterceptor())
 

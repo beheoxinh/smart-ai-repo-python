@@ -1,5 +1,6 @@
 # File: components/sidebar.py (Cross-platform version)
 import sys
+import subprocess
 try:
     import win32gui
     import win32api
@@ -118,6 +119,15 @@ class Sidebar(QMainWindow):
             self.popup_windows.append(popup_window)
             self.has_active_popup = True
             self.mouse_timer.stop()
+
+            # Demote sidebar by removing the StaysOnTop hint
+            flags = self.windowFlags()
+            if flags & Qt.WindowType.WindowStaysOnTopHint:
+                self.setWindowFlags(flags & ~Qt.WindowType.WindowStaysOnTopHint)
+                self.show() # Re-show to apply flag change
+
+            popup_window.raise_()
+            popup_window.activateWindow()
             popup_window.popupClosed.connect(lambda: self.handle_popup_closed(popup_window))
         except Exception as e:
             alert_popup(self, "Popup Error", f"Error handling popup creation: {e}")
@@ -126,8 +136,18 @@ class Sidebar(QMainWindow):
         try:
             if popup in self.popup_windows:
                 self.popup_windows.remove(popup)
+
             if not self.popup_windows:
                 self.has_active_popup = False
+
+                # Promote sidebar by restoring the StaysOnTop hint
+                flags = self.windowFlags()
+                if not (flags & Qt.WindowType.WindowStaysOnTopHint):
+                    self.setWindowFlags(flags | Qt.WindowType.WindowStaysOnTopHint)
+                    self.show() # Re-show to apply flag change
+                
+                self.raise_()
+                self.activateWindow()
                 self.mouse_timer.start(100)
         except Exception as e:
             alert_popup(self, "Popup Error", f"Error handling popup closure: {e}")
@@ -137,28 +157,61 @@ class Sidebar(QMainWindow):
             for popup in self.popup_windows[:]:
                 if popup:
                     popup.close()
-            self.popup_windows.clear()
-            self.has_active_popup = False
-            self.mouse_timer.start(100)
+            # The popupClosed signal will trigger handle_popup_closed
         except Exception as e:
             alert_popup(self, "WebView Redirect Error", f"Error handling webview redirect: {e}")
 
     def is_foreground_fullscreen(self, screen):
         try:
-            if not win32gui: return False
+            # Windows implementation
+            if sys.platform == "win32":
+                if not win32gui: return False
+                
+                hwnd = win32gui.GetForegroundWindow()
+                if not hwnd: return False
+                
+                # Filter out desktop and shell windows
+                class_name = win32gui.GetClassName(hwnd)
+                if class_name in ["Progman", "WorkerW"]: return False
+                if not win32gui.IsWindowVisible(hwnd): return False
+
+                rect = win32gui.GetWindowRect(hwnd)
+                screen_geo = screen.geometry()
+                
+                # Check if window rect matches screen geometry
+                return (abs(rect[0] - screen_geo.x()) <= 1 and
+                        abs(rect[1] - screen_geo.y()) <= 1 and
+                        abs(rect[2] - rect[0] - screen_geo.width()) <= 1 and
+                        abs(rect[3] - rect[1] - screen_geo.height()) <= 1)
+
+            # Linux/X11 implementation
+            elif sys.platform.startswith("linux"):
+                try:
+                    # Get the active window ID
+                    root_check_cmd = ["xprop", "-root", "_NET_ACTIVE_WINDOW"]
+                    active_window_id_str = subprocess.check_output(root_check_cmd).decode("utf-8")
+                    
+                    # Extract the window ID from the output string
+                    window_id = active_window_id_str.split("#")[-1].strip()
+                    if not window_id:
+                        return False
+
+                    # Check the state of the active window
+                    state_check_cmd = ["xprop", "-id", window_id, "_NET_WM_STATE"]
+                    window_state_str = subprocess.check_output(state_check_cmd).decode("utf-8")
+
+                    # Check if the fullscreen atom is present in the state
+                    return "_NET_WM_STATE_FULLSCREEN" in window_state_str
+
+                except (subprocess.CalledProcessError, FileNotFoundError):
+                    # This can happen if xprop is not installed or if the command fails
+                    return False
             
-            hwnd = win32gui.GetForegroundWindow()
-            if not hwnd: return False
-            class_name = win32gui.GetClassName(hwnd)
-            if class_name in ["Progman", "WorkerW"]: return False
-            if not win32gui.IsWindowVisible(hwnd): return False
-            rect = win32gui.GetWindowRect(hwnd)
-            screen_geo = screen.geometry()
-            return (abs(rect[0] - screen_geo.x()) <= 1 and
-                    abs(rect[1] - screen_geo.y()) <= 1 and
-                    abs(rect[2] - rect[0] - screen_geo.width()) <= 1 and
-                    abs(rect[3] - rect[1] - screen_geo.height()) <= 1)
+            # Fallback for other OS or if something goes wrong
+            return False
+
         except Exception as e:
+            # Broad exception to prevent crashes
             return False
 
     def check_mouse(self):

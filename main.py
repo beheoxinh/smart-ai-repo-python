@@ -16,9 +16,9 @@ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
     "--enable-gpu-rasterization "
     "--ignore-gpu-blocklist "
     # Resource Management
-    "--disable-background-networking "
-    "--disable-background-timer-throttling "
-    "--disable-renderer-backgrounding "
+    # "--disable-background-networking "
+    # "--disable-background-timer-throttling "
+    # "--disable-renderer-backgrounding "
     # Feature Reduction for Simplicity
     "--disable-component-update "
     "--disable-domain-reliability "
@@ -29,10 +29,11 @@ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
     "--disable-dev-shm-usage "
 )
 
-if sys.stderr is None:
-    sys.stderr = open(os.devnull, 'w')
-if sys.stdout is None:
-    sys.stdout = open(os.devnull, 'w')
+# Commented out to allow error messages to be seen during debugging
+# if sys.stderr is None:
+#     sys.stderr = open(os.devnull, 'w')
+# if sys.stdout is None:
+#     sys.stdout = open(os.devnull, 'w')
 
 import logging
 from PyQt6.QtGui import QAction, QIcon
