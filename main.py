@@ -65,6 +65,9 @@ def show_critical_error(message):
 def main():
     try:
         app = QApplication(sys.argv)
+        
+        # Set the desktop file name for better integration with desktop environments (e.g., for location services)
+        app.setDesktopFileName("smart-ai.desktop")
 
         paths = AppPaths()
 
