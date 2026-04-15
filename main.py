@@ -7,18 +7,12 @@ if os.environ.get("XDG_SESSION_TYPE") == "wayland":
     os.environ["QT_QPA_PLATFORM"] = "wayland"
 
 # --- Stable Chromium Flags ---
-# These flags are chosen for broad compatibility and stability, avoiding experimental features
-# that can cause rendering issues on some systems.
 os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
     "--no-sandbox "
     # Performance & Stability
     "--enable-gpu-rasterization "
     "--ignore-gpu-blocklist "
-    # Resource Management
-    # "--disable-background-networking "
-    # "--disable-background-timer-throttling "
-    # "--disable-renderer-backgrounding "
     # Feature Reduction for Simplicity
     "--disable-component-update "
     "--disable-domain-reliability "
@@ -28,12 +22,6 @@ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
     "--disable-breakpad "
     "--disable-dev-shm-usage "
 )
-
-# Commented out to allow error messages to be seen during debugging
-# if sys.stderr is None:
-#     sys.stderr = open(os.devnull, 'w')
-# if sys.stdout is None:
-#     sys.stdout = open(os.devnull, 'w')
 
 import logging
 from PyQt6.QtGui import QAction, QIcon
@@ -52,7 +40,6 @@ logging.basicConfig(level=logging.INFO, format=log_format, stream=sys.stdout)
 def show_critical_error(message):
     """A simple, dependency-free error popup for critical failures."""
     from PyQt6.QtWidgets import QMessageBox, QApplication
-    # Ensure an app instance exists for the popup
     if not QApplication.instance():
         _ = QApplication(sys.argv)
     msg_box = QMessageBox()
@@ -66,7 +53,6 @@ def main():
     try:
         app = QApplication(sys.argv)
         
-        # Set the desktop file name for better integration with desktop environments (e.g., for location services)
         app.setDesktopFileName("smart-ai.desktop")
 
         paths = AppPaths()
@@ -82,11 +68,9 @@ def main():
         tray_icon = QSystemTrayIcon(icon, parent=app)
         tray_menu = QMenu()
 
-        # This is where the error occurs, so we wrap it
         try:
             sidebar = Sidebar()
         except Exception as e:
-            # This provides a more specific error message
             error_info = f"Failed to create the main window (Sidebar).\n\nError: {e}\n\nTraceback:\n{traceback.format_exc()}"
             logging.error(error_info)
             raise RuntimeError(error_info) from e
@@ -105,7 +89,6 @@ def main():
         return app.exec()
 
     except Exception as e:
-        # This is the ultimate catch-all for any error during startup
         error_message = f"A fatal error occurred during application startup:\n\n{str(e)}"
         logging.critical(error_message, exc_info=True)
         show_critical_error(error_message)

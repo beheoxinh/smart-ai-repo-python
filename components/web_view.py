@@ -16,7 +16,6 @@ from PyQt6.QtWebEngineCore import (
     QWebEngineUrlRequestInfo,
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtNetwork import QNetworkProxyFactory
 from PyQt6.QtWidgets import QMenu, QDialog, QVBoxLayout
 
 from utils import AppPaths
@@ -191,8 +190,6 @@ class CustomWebView(QWebEngineView):
         self.app_paths = AppPaths()
         self.active_popups = []
         self.loaded = False
-        
-        QNetworkProxyFactory.setUseSystemConfiguration(True)
 
         self.setStyleSheet("""
             #customWebView { background-color: white; }
@@ -285,7 +282,8 @@ class CustomWebView(QWebEngineView):
         for attr in attributes_to_enable:
             settings.setAttribute(attr, True)
 
-        settings.setAttribute(QWebEngineSettings.WebAttribute.AllowRunningInsecureContent, False)
+        # CRITICAL FIX: Allow loading local HTTP content like Open WebUI.
+        settings.setAttribute(QWebEngineSettings.WebAttribute.AllowRunningInsecureContent, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
         settings.setDefaultTextEncoding('UTF-8')
 

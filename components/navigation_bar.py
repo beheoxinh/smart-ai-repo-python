@@ -267,10 +267,8 @@ class NavigationBar(QFrame):
             self.center_layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignHCenter)
 
     def load_config(self):
-        # Ensure the user's config directory exists
         self.app_paths.ensure_config_exists()
 
-        # If the user's config file doesn't exist, copy the default one
         if not os.path.exists(self.config_path):
             default_config_path = self.app_paths.get_path('config', 'nav_config.json')
             if os.path.exists(default_config_path):
@@ -282,12 +280,22 @@ class NavigationBar(QFrame):
                     self.rebuild_layout_from_config()
                     return
 
-        # Now, load from the user's config file
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 self.button_data = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             self.button_data = []
+
+        # --- Add Ollama button if it doesn't exist ---
+        ollama_exists = any(btn.get('tooltip') == 'Ollama' for btn in self.button_data)
+        if not ollama_exists:
+            ollama_button = {
+                "icon": "ollama.svg",
+                "tooltip": "Ollama",
+                "url": "http://127.0.0.1:7001"
+            }
+            self.button_data.insert(0, ollama_button) # Add to the beginning
+            self.save_config() # Save the updated config
 
         self.rebuild_layout_from_config()
 
@@ -302,6 +310,10 @@ class NavigationBar(QFrame):
         for data in self.button_data:
             # Icons for nav buttons should always come from the bundled resources
             icon_full_path = self.app_paths.get_path('images', data['icon'])
+            # Fallback icon if the specified one doesn't exist
+            if not os.path.exists(icon_full_path):
+                icon_full_path = self.app_paths.get_path('images', 'default.svg') # Assuming you have a default.svg
+
             btn = self.add_button(icon_full_path, data['tooltip'], data['url'])
             self.center_layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignHCenter)
             self.buttons.append(btn)
