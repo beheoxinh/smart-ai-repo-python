@@ -1,0 +1,17 @@
+{
+    "name": "Python AI Project",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "charliermarsh.ruff",
+                "zhuangtongfa.Material-theme"
+            ],
+            "settings": {
+                "editor.fontSize": 14,
+                "workbench.colorTheme": "Community Material Theme Ocean"
+            }
+        }
+    }
+}

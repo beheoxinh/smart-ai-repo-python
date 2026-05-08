@@ -277,7 +277,7 @@ class Sidebar(QMainWindow):
 
             self.fade_animation = QPropertyAnimation(self, b"windowOpacity")
             self.fade_animation.setDuration(150)
-            self.fade_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+            self.fade_animation.setEasingCurve(QEasingCurve.Type.OutExpo)
             self.fade_animation.setStartValue(0.0)
             self.fade_animation.setEndValue(1.0)
             self.fade_animation.start()
@@ -296,7 +296,7 @@ class Sidebar(QMainWindow):
 
             self.fade_animation = QPropertyAnimation(self, b"windowOpacity")
             self.fade_animation.setDuration(150)
-            self.fade_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+            self.fade_animation.setEasingCurve(QEasingCurve.Type.OutExpo)
             self.fade_animation.setStartValue(self.windowOpacity())
             self.fade_animation.setEndValue(0.0)
 
