@@ -4,7 +4,10 @@ import sys
 
 # --- Platform Detection & Early Setup ---
 if os.environ.get("XDG_SESSION_TYPE") == "wayland":
-    os.environ["QT_QPA_PLATFORM"] = "wayland"
+    # GNOME Wayland (Mutter) không cho phép ứng dụng tự do đặt vị trí cửa sổ (absolute positioning).
+    # Để sidebar có thể neo sát mép phải màn hình, chúng ta buộc Qt phải sử dụng XWayland (backend 'xcb')
+    # thay vì native 'wayland'.
+    os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 # --- Stable Chromium Flags ---
 os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
@@ -53,7 +56,8 @@ def main():
     try:
         app = QApplication(sys.argv)
         
-        app.setDesktopFileName("smart-ai.desktop")
+        # Sửa lỗi: Bỏ ".desktop" ở cuối tên file
+        app.setDesktopFileName("smart-ai")
 
         paths = AppPaths()
 
