@@ -1,7 +1,8 @@
 # File: components/sidebar.py (Cross-platform version)
 import sys
 import subprocess
-import logging 
+import logging
+import shutil
 try:
     import win32gui
     import win32api
@@ -29,9 +30,10 @@ class Sidebar(QMainWindow):
         self.is_resizing = False
         self.has_active_popup = False
         self.is_nav_menu_open = False 
-        self.is_webview_menu_open = False # Biến trạng thái mới
+        self.is_webview_menu_open = False
         self.popup_windows = []
         self.last_width = None
+        self.is_made_sticky = False # Flag for workspace stickiness
         self.init_ui()
         self.setup_shortcut()
 
@@ -75,7 +77,6 @@ class Sidebar(QMainWindow):
             self.content_widget.web_view.webviewRedirectCompleted.connect(self.handle_webview_redirect_completed)
             self.content_widget.nav_bar.navigationClicked.connect(self.handle_navigation)
             self.content_widget.nav_bar.menu_state_changed.connect(self.on_nav_menu_state_changed)
-            # Kết nối tín hiệu mới từ webview
             self.content_widget.context_menu_state_changed.connect(self.on_webview_menu_state_changed)
 
             container_layout.addWidget(main_widget)
@@ -99,6 +100,41 @@ class Sidebar(QMainWindow):
             logging.error(f"Sidebar Initialization Error: {e}", exc_info=True)
             alert_popup(self, "Sidebar Initialization Error", f"Failed to initialize sidebar UI: {e}")
             raise
+
+    def _make_sticky_linux(self):
+        if self.is_made_sticky or sys.platform != "linux" or QApplication.platformName() != 'xcb':
+            return
+
+        if not shutil.which('wmctrl'):
+            logging.warning("`wmctrl` not found. Cannot make the window sticky across workspaces. Please install it (e.g., 'sudo apt-get install wmctrl').")
+            self.is_made_sticky = True # Don't try again
+            return
+
+        try:
+            win_id_ptr = self.winId()
+            if not win_id_ptr:
+                return # Window not ready yet
+
+            win_id = int(win_id_ptr)
+            hex_id = hex(win_id)
+            
+            subprocess.run(
+                ['wmctrl', '-i', '-r', hex_id, '-b', 'add,sticky'],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            logging.info(f"Made window {hex_id} sticky for all workspaces.")
+            self.is_made_sticky = True
+        except (subprocess.CalledProcessError, FileNotFoundError, TypeError) as e:
+            logging.error(f"Failed to make window sticky using wmctrl: {e}")
+            self.is_made_sticky = True # Don't try again
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if event.isAccepted():
+            # Use a QTimer to ensure the window ID is valid
+            QTimer.singleShot(100, self._make_sticky_linux)
 
     def on_nav_menu_state_changed(self, is_open):
         self.is_nav_menu_open = is_open
