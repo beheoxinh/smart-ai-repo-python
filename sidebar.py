@@ -28,6 +28,8 @@ class Sidebar(QMainWindow):
         self.active_screen = None
         self.is_resizing = False
         self.has_active_popup = False
+        self.is_nav_menu_open = False 
+        self.is_webview_menu_open = False # Biến trạng thái mới
         self.popup_windows = []
         self.last_width = None
         self.init_ui()
@@ -72,6 +74,9 @@ class Sidebar(QMainWindow):
             self.content_widget.web_view.popupCreated.connect(self.handle_popup_created)
             self.content_widget.web_view.webviewRedirectCompleted.connect(self.handle_webview_redirect_completed)
             self.content_widget.nav_bar.navigationClicked.connect(self.handle_navigation)
+            self.content_widget.nav_bar.menu_state_changed.connect(self.on_nav_menu_state_changed)
+            # Kết nối tín hiệu mới từ webview
+            self.content_widget.context_menu_state_changed.connect(self.on_webview_menu_state_changed)
 
             container_layout.addWidget(main_widget)
             self.setCentralWidget(container)
@@ -95,9 +100,16 @@ class Sidebar(QMainWindow):
             alert_popup(self, "Sidebar Initialization Error", f"Failed to initialize sidebar UI: {e}")
             raise
 
+    def on_nav_menu_state_changed(self, is_open):
+        self.is_nav_menu_open = is_open
+        logging.info(f"Nav menu state changed: {'Open' if is_open else 'Closed'}")
+
+    def on_webview_menu_state_changed(self, is_open):
+        self.is_webview_menu_open = is_open
+        logging.info(f"Webview context menu state changed: {'Open' if is_open else 'Closed'}")
+
     def enterEvent(self, event):
-        """Kích hoạt khi chuột đi vào vùng widget (kể cả vùng 1px)"""
-        if not self.is_visible and not self.has_active_popup:
+        if not self.is_visible and not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
             screen = QApplication.screenAt(QCursor.pos())
             if screen and self.is_foreground_fullscreen(screen):
                 return
@@ -108,8 +120,9 @@ class Sidebar(QMainWindow):
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        """Kích hoạt khi chuột rời khỏi vùng widget"""
-        if self.is_visible and not self.has_active_popup:
+        if QApplication.mouseButtons() == Qt.MouseButton.LeftButton:
+            return
+        if self.is_visible and not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
             self.hide_sidebar()
         
         super().leaveEvent(event)
@@ -164,7 +177,6 @@ class Sidebar(QMainWindow):
             alert_popup(self, "WebView Redirect Error", f"Error handling webview redirect: {e}")
 
     def is_foreground_fullscreen(self, screen):
-        # This function is platform-specific and complex, assuming it's correct for now.
         return False
 
     def toggle_sidebar(self):
@@ -259,3 +271,20 @@ class Sidebar(QMainWindow):
             )
         except Exception as e:
             alert_popup(self, "Update Position Error", f"Error updating window position: {e}")
+
+    def update_width_and_x_position(self):
+        try:
+            if not self.active_screen:
+                self.active_screen = self.get_screen_at_cursor() or QApplication.primaryScreen()
+            
+            screen_geometry = self.active_screen.geometry()
+            
+            current_y = self.y()
+            current_height = self.height()
+            
+            new_x = screen_geometry.x() + screen_geometry.width() - self.width()
+            
+            self.move(new_x, current_y)
+
+        except Exception as e:
+            alert_popup(self, "Update Width Error", f"Error updating window width: {e}")

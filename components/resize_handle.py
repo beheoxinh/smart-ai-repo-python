@@ -35,7 +35,8 @@ class ResizeHandle(QFrame):
             new_width = max(min_width, min(max_width, self.start_width - dx))
             if new_width != self.parent.width():
                 self.parent.setFixedWidth(new_width)
-                self.parent.update_position()
+                # SỬA LỖI: Gọi hàm mới chỉ để cập nhật chiều rộng và vị trí X
+                self.parent.update_width_and_x_position()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.is_resizing:

@@ -9,6 +9,8 @@ from .title_bar import TitleBar
 
 class ContentWidget(QWidget):
     closeRequested = pyqtSignal()
+    # Chuyển tiếp tín hiệu từ web_view
+    context_menu_state_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -27,14 +29,11 @@ class ContentWidget(QWidget):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
 
-        # Create WebView first
         self.web_view = CustomWebView()
         self.web_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        # Create Navigation Bar
         self.nav_bar = NavigationBar()
 
-        # Add widgets to layout in order: WebView first, NavBar last
         content_layout.addWidget(self.web_view)
         content_layout.addWidget(self.nav_bar)
 
@@ -48,15 +47,15 @@ class ContentWidget(QWidget):
         """)
 
     def setup_connections(self):
-        # Connect signals from navigation bar to web view
         self.nav_bar.refreshClicked.connect(self.web_view.reload)
         self.nav_bar.backClicked.connect(self.web_view.back)
         self.nav_bar.forwardClicked.connect(self.web_view.forward)
         self.nav_bar.navigationClicked.connect(self.handle_navigation_click)
-        # FIX: Connect to the correctly renamed method 'clear_http_cache'
         self.nav_bar.clearCacheRequested.connect(self.web_view.clear_http_cache)
         self.nav_bar.closeClicked.connect(self.closeRequested.emit)
         self.web_view.titleChanged.connect(self.title_bar.set_title)
+        # Kết nối tín hiệu từ web_view để chuyển tiếp
+        self.web_view.context_menu_state_changed.connect(self.context_menu_state_changed.emit)
 
     def handle_navigation_click(self, url):
         self.web_view.setUrl(QUrl(url))

@@ -6,11 +6,11 @@ from PyQt6.QtCore import Qt, pyqtSignal, QPoint
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QPushButton, QSpacerItem,
-    QSizePolicy, QMenu, QApplication, QMessageBox
+    QSizePolicy, QMenu, QApplication, QMessageBox, QWidget, QDialog
 )
 
 from components.menu_setting_dialog import MenuSettingDialog
-from utils import AppPaths  # Import AppPaths
+from utils import AppPaths
 
 
 class NavigationBar(QFrame):
@@ -20,14 +20,14 @@ class NavigationBar(QFrame):
     clearCacheRequested = pyqtSignal()
     navigationClicked = pyqtSignal(str)
     closeClicked = pyqtSignal()
+    menu_state_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.app_paths = AppPaths() # Initialize AppPaths
+        self.app_paths = AppPaths() 
         self.buttons = []
         self.button_data = []
         self.drag_start_pos = None
-        # Use the correct path for user-specific config data
         self.config_path = os.path.join(self.app_paths.get_data_dir('config'), 'nav_config.json')
         self.setup_ui()
         self.load_config()
@@ -46,7 +46,6 @@ class NavigationBar(QFrame):
         self.main_layout.setContentsMargins(5, 0, 5, 0)
         self.main_layout.setSpacing(20)
 
-        # Close button at the top
         self.close_btn = QPushButton("×")
         self.close_btn.setFixedSize(50, 40)
         self.close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -76,7 +75,6 @@ class NavigationBar(QFrame):
         self.main_layout.addLayout(self.center_layout)
         self.main_layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
 
-        # Add buttons
         self.add_button_btn = QPushButton()
         self.add_button_btn.setFixedSize(50, 34)
         self.add_button_btn.setText("+")
@@ -133,7 +131,6 @@ class NavigationBar(QFrame):
     def handle_navigation_click(self):
         btn = self.sender()
         if btn not in self.buttons:
-            print("Clicked button not in buttons list! Possibly deleted.")
             return
         self.navigationClicked.emit(btn.url)
 
@@ -160,7 +157,9 @@ class NavigationBar(QFrame):
         delete_action = menu.addAction("Delete")
         clear_cache_action = menu.addAction("Clear Cache")
 
+        self.menu_state_changed.emit(True)
         action = menu.exec(button.mapToGlobal(QPoint(0, button.height())))
+        self.menu_state_changed.emit(False)
 
         if action == edit_action:
             self.edit_button(button)
@@ -170,42 +169,38 @@ class NavigationBar(QFrame):
             self.clearCacheRequested.emit()
 
     def edit_button(self, button):
-        self.parent().dialog_open = True
         idx = self.buttons.index(button)
         current_data = self.button_data[idx]
 
-        def update_callback(new_data):
-            old_icon = self.button_data[idx]['icon']
-            self.button_data[idx] = new_data
-            self.save_config()
-            self.load_config()
-
-            # Nếu icon đã đổi, check xóa icon cũ nếu không xài
-            if old_icon != new_data['icon']:
-                self.cleanup_unused_icon(old_icon)
-
-        self.dialog = MenuSettingDialog(callback=update_callback, parent=self, mode="edit")
-        self.dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self.dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.dialog.__menu_setting_dialog__ = True
-        self.dialog.prefill(current_data, idx)
-        self.dialog.show()
+        dialog = MenuSettingDialog(parent=self.window(), mode="edit")
+        dialog.prefill(current_data)
+        
+        self.menu_state_changed.emit(True)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            new_data = dialog.get_data()
+            if new_data:
+                old_icon = self.button_data[idx].get('icon')
+                self.button_data[idx] = new_data
+                self.save_config()
+                self.load_config()
+                if old_icon and old_icon != new_data.get('icon'):
+                    self.cleanup_unused_icon(old_icon)
+        self.menu_state_changed.emit(False)
 
     def open_add_button_dialog(self):
-        self.parent().dialog_open = True
-
-        def add_new_button(new_data):
-            self.button_data.append(new_data)
-            self.save_config()
-            self.load_config()
-
-        self.dialog = MenuSettingDialog(callback=add_new_button, parent=self, mode="add")
-        self.dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self.dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.dialog.__menu_setting_dialog__ = True
-        self.dialog.show()
+        dialog = MenuSettingDialog(parent=self.window(), mode="add")
+        
+        self.menu_state_changed.emit(True)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            new_data = dialog.get_data()
+            if new_data:
+                self.button_data.append(new_data)
+                self.save_config()
+                self.load_config()
+        self.menu_state_changed.emit(False)
 
     def delete_button(self, button):
+        self.menu_state_changed.emit(True)
         reply = QMessageBox.question(
             self,
             "Delete",
@@ -213,6 +208,7 @@ class NavigationBar(QFrame):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
+        self.menu_state_changed.emit(False)
 
         if reply != QMessageBox.StandardButton.Yes:
             return
@@ -257,7 +253,6 @@ class NavigationBar(QFrame):
                     break
 
     def rebuild_layout(self):
-        # Added a comment to force a file change
         for i in reversed(range(self.center_layout.count())):
             item = self.center_layout.itemAt(i)
             if item and item.widget():
@@ -286,33 +281,20 @@ class NavigationBar(QFrame):
         except (FileNotFoundError, json.JSONDecodeError):
             self.button_data = []
 
-        # --- Add Ollama button if it doesn't exist ---
-        ollama_exists = any(btn.get('tooltip') == 'Ollama' for btn in self.button_data)
-        if not ollama_exists:
-            ollama_button = {
-                "icon": "ollama.svg",
-                "tooltip": "Ollama",
-                "url": "http://127.0.0.1:7001"
-            }
-            self.button_data.insert(0, ollama_button) # Add to the beginning
-            self.save_config() # Save the updated config
-
+        # Sắp xếp lại button_data theo 'order'
+        self.button_data.sort(key=lambda x: x.get('order', 99))
         self.rebuild_layout_from_config()
 
     def rebuild_layout_from_config(self):
-        # Clear existing buttons
         for btn in self.buttons:
             self.center_layout.removeWidget(btn)
             btn.deleteLater()
         self.buttons.clear()
 
-        # Add new buttons from config
         for data in self.button_data:
-            # Icons for nav buttons should always come from the bundled resources
             icon_full_path = self.app_paths.get_path('images', data['icon'])
-            # Fallback icon if the specified one doesn't exist
             if not os.path.exists(icon_full_path):
-                icon_full_path = self.app_paths.get_path('images', 'default.svg') # Assuming you have a default.svg
+                icon_full_path = self.app_paths.get_path('images', 'default.svg')
 
             btn = self.add_button(icon_full_path, data['tooltip'], data['url'])
             self.center_layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -322,17 +304,14 @@ class NavigationBar(QFrame):
 
     def save_config(self):
         self.app_paths.ensure_config_exists()
+        self.button_data.sort(key=lambda x: x.get('order', 99))
         with open(self.config_path, 'w', encoding='utf-8') as f:
             json.dump(self.button_data, f, indent=4)
 
     def cleanup_unused_icon(self, icon_filename):
-        # Check if the icon is still used by any button
         is_used = any(data['icon'] == icon_filename for data in self.button_data)
         if not is_used:
             try:
-                # Icons are part of the bundled app, so we don't delete them from the user's data dir
-                # Instead, we check the source images folder if needed, but cleanup is tricky
-                # For now, we just don't delete them to be safe
                 pass
             except Exception as e:
                 print(f"Error during icon cleanup check: {e}")

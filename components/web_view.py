@@ -28,7 +28,6 @@ class PopupWindow(QDialog):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         
-        # Use a layout for QDialog
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(layout)
@@ -41,14 +40,12 @@ class PopupWindow(QDialog):
         self.setWindowTitle("Loading...")
         self.setMinimumSize(800, 650)
         
-        # Set flags to be a Tool window, like the sidebar, to ensure consistent window manager behavior
         self.setWindowFlags(
             Qt.WindowType.Tool | 
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.WindowCloseButtonHint
         )
 
-        # Center the window on the active screen
         screen = QGuiApplication.screenAt(QCursor.pos())
         if not screen:
             screen = QGuiApplication.primaryScreen()
@@ -64,7 +61,6 @@ class PopupWindow(QDialog):
         self.page.titleChanged.connect(self.setWindowTitle)
 
     def closeEvent(self, event):
-        print("PopupWindow: Closing")
         self.popupClosed.emit()
         event.accept()
 
@@ -107,7 +103,6 @@ class CustomWebEnginePage(QWebEnginePage):
         parsed_url = urlparse(url_str)
 
         if "claude.ai" in parsed_url.netloc and self.auth_in_progress:
-            print("Auth completed, returning to app")
             self.auth_in_progress = False
             self.authFinished.emit(url_str)
             return True
@@ -125,64 +120,13 @@ class CustomWebEnginePage(QWebEnginePage):
             print(f"Error creating popup window: {e}")
             return None
 
-    def createStandardContextMenu(self):
-        try:
-            custom_menu = QMenu(self.view())
-            custom_menu.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-
-            hit_test_data = self.contextMenuData()
-            link_url = hit_test_data.linkUrl()
-            is_link_present = bool(link_url.url())
-            is_image = hit_test_data.mediaType() == hit_test_data.MediaType.MediaTypeImage
-            is_text_selected = bool(hit_test_data.selectedText())
-            is_editable = hit_test_data.isContentEditable()
-
-            if is_link_present:
-                open_action = QAction("Open in default browser", custom_menu)
-                open_action.triggered.connect(lambda: QDesktopServices.openUrl(link_url))
-                custom_menu.addAction(open_action)
-                if link_url.isValid():
-                    custom_menu.addAction(self.action(QWebEnginePage.WebAction.CopyLinkToClipboard))
-                custom_menu.addSeparator()
-
-            if is_image:
-                custom_menu.addAction(self.action(QWebEnginePage.WebAction.CopyImageToClipboard))
-                custom_menu.addAction(self.action(QWebEnginePage.WebAction.CopyImageUrlToClipboard))
-                custom_menu.addAction(self.action(QWebEnginePage.WebAction.DownloadImageToDisk))
-                custom_menu.addSeparator()
-
-            if is_text_selected:
-                custom_menu.addAction(self.action(QWebEnginePage.WebAction.Copy))
-
-            if is_editable:
-                if not is_text_selected:
-                    custom_menu.addAction(self.action(QWebEnginePage.WebAction.Copy))
-                custom_menu.addAction(self.action(QWebEnginePage.WebAction.Cut))
-                custom_menu.addAction(self.action(QWebEnginePage.WebAction.Paste))
-                custom_menu.addSeparator()
-                custom_menu.addAction(self.action(QWebEnginePage.WebAction.SelectAll))
-
-            if not custom_menu.actions() or (not is_link_present and not is_image and not is_text_selected and not is_editable):
-                if custom_menu.actions():
-                    custom_menu.addSeparator()
-                custom_menu.addAction(self.action(QWebEnginePage.WebAction.Reload))
-
-            actions = custom_menu.actions()
-            if actions and actions[-1].isSeparator():
-                custom_menu.removeAction(actions[-1])
-
-            return custom_menu if custom_menu.actions() else None
-        except Exception as e:
-            print(f"ERROR in createStandardContextMenu: {e}")
-            traceback.print_exc()
-            return QMenu(self.view())
-
-
 class CustomWebView(QWebEngineView):
     popupCreated = pyqtSignal(object)
     popupClosed = pyqtSignal()
     webviewRedirectCompleted = pyqtSignal(str)
     clearCacheRequested = pyqtSignal()
+    # Tín hiệu mới để báo trạng thái context menu
+    context_menu_state_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -216,6 +160,18 @@ class CustomWebView(QWebEngineView):
 
         self.setup_settings()
         self.setMouseTracking(True)
+
+    def contextMenuEvent(self, event):
+        """Ghi đè sự kiện context menu để bắt tín hiệu show/hide."""
+        menu = self.createStandardContextMenu()
+        if menu:
+            # Phát tín hiệu khi menu sắp hiện và sắp ẩn
+            menu.aboutToShow.connect(lambda: self.context_menu_state_changed.emit(True))
+            menu.aboutToHide.connect(lambda: self.context_menu_state_changed.emit(False))
+            menu.exec(event.globalPos())
+        else:
+            # Nếu không có menu, vẫn gọi super để xử lý mặc định (nếu có)
+            super().contextMenuEvent(event)
 
     def on_render_process_terminated(self, termination_status, exit_code):
         status_str = str(termination_status)
@@ -257,7 +213,7 @@ class CustomWebView(QWebEngineView):
         self.profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
         self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
         self.profile.downloadRequested.connect(self.handle_download_requested)
-        self.profile.setSpellCheckEnabled(False) # Disabled spell checking
+        self.profile.setSpellCheckEnabled(False) 
         self.profile.setSpellCheckLanguages(['en-US'])
         self.profile.setUrlRequestInterceptor(EnhancedBrowserInterceptor())
 
@@ -282,7 +238,6 @@ class CustomWebView(QWebEngineView):
         for attr in attributes_to_enable:
             settings.setAttribute(attr, True)
 
-        # CRITICAL FIX: Allow loading local HTTP content like Open WebUI.
         settings.setAttribute(QWebEngineSettings.WebAttribute.AllowRunningInsecureContent, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
         settings.setDefaultTextEncoding('UTF-8')
@@ -376,20 +331,12 @@ class CustomWebView(QWebEngineView):
 
 
 class EnhancedBrowserInterceptor(QWebEngineUrlRequestInterceptor):
-    """
-    A more intelligent interceptor that only modifies the initial main frame request
-    to look like a standard browser, and leaves all other requests (e.g., API calls,
-    data streams, images) untouched to ensure stability and performance.
-    """
     def interceptRequest(self, info):
         try:
-            # Only modify the main frame request to set the User-Agent and initial headers.
             if info.resourceType() == QWebEngineUrlRequestInfo.ResourceType.ResourceTypeMainFrame:
                 info.setHttpHeader(b"User-Agent", b"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
                 info.setHttpHeader(b"Accept-Language", b"en-US,en;q=0.9,vi;q=0.8")
                 info.setHttpHeader(b"Accept", b"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
             
-            # For all other request types (like XHR, Fetch, scripts, images), we do not
-            # interfere. This is critical for stable streaming of AI responses.
         except Exception as e:
             print(f"Interceptor error: {e}")
