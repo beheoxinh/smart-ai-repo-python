@@ -331,6 +331,10 @@ class CustomWebView(QWebEngineView):
         super().enterEvent(event)
 
     def mousePressEvent(self, event):
+        # Ý tưởng của user: Kiểm tra trạng thái xem đã focus/gõ được chưa, nếu chưa thì hook lại
+        if not self.hasFocus() or (self.window() and not self.window().isActiveWindow()):
+            print(f"[FocusGuard] WebView click detected focus issue (hasFocus={self.hasFocus()}). Re-requesting focus...")
+
         self.setFocus()
         self.focusRequested.emit()
         super().mousePressEvent(event)

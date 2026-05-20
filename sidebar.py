@@ -289,8 +289,9 @@ class Sidebar(QMainWindow):
         if sys.platform != "linux" or QApplication.platformName() != 'xcb':
             return
 
-        # Let clicks pass through without immediate focus grab interference
-        if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+        # Let clicks pass through without immediate focus grab interference,
+        # unless forced (e.g. from mousePressEvent)
+        if not forced and QApplication.mouseButtons() != Qt.MouseButton.NoButton:
             return
 
         now = time.time()
@@ -491,8 +492,22 @@ class Sidebar(QMainWindow):
 
     def mousePressEvent(self, event):
         self.last_mouse_in_time = time.time()
-        self.activateWindow()
-        self._grab_focus_linux(forced=True)
+
+        # Ý tưởng của user: "Self-healing" focus on click.
+        # Kiểm tra xem sidebar đã thực sự gõ được chữ chưa (active window + webview focus)
+        is_active = self.isActiveWindow()
+        webview_has_focus = False
+        if self.content_widget and self.content_widget.web_view:
+            webview_has_focus = self.content_widget.web_view.hasFocus()
+
+        if not is_active or not webview_has_focus:
+            logging.info(f"MousePress Guard: Focus issue detected (Active={is_active}, WebView={webview_has_focus}). Re-hooking focus...")
+            self.activateWindow()
+            self._grab_focus_linux(forced=True)
+        else:
+            # Vẫn hook để đảm bảo X11 focus ổn định mà không cần log
+            self._grab_focus_linux(forced=True)
+
         super().mousePressEvent(event)
 
     def leaveEvent(self, event):
