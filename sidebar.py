@@ -135,6 +135,7 @@ class Sidebar(QMainWindow):
             # Focus Watchdog: if mouse is inside and visible but window doesn't have focus, grab it
             # Aggressively check every 100ms
             if not self.isActiveWindow():
+                logging.info("Watchdog: Focus lost detected, re-grabbing focus...")
                 self._grab_focus_linux()
             return
 
@@ -181,9 +182,11 @@ class Sidebar(QMainWindow):
             container_layout.setSpacing(0)
 
             self.resize_handle = ResizeHandle(self)
+            self.resize_handle.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             container_layout.addWidget(self.resize_handle)
 
             main_widget = QWidget()
+            main_widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             self.main_ui_container = main_widget  # Lưu lại để ẩn/hiện
             main_widget.setMouseTracking(True)
             main_layout = QVBoxLayout(main_widget)
@@ -194,6 +197,7 @@ class Sidebar(QMainWindow):
             main_layout.addWidget(self.content_widget)
 
             self.bottom_bar = BottomBar()
+            self.bottom_bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             main_layout.addWidget(self.bottom_bar)
 
             self.content_widget.closeRequested.connect(lambda: self.hide_sidebar(reason="close_button"))
@@ -282,6 +286,7 @@ class Sidebar(QMainWindow):
         if not win_id or int(win_id) == 0:
             return
 
+        logging.info("X11 Focus Grab: Requesting input focus for window " + hex(int(win_id)))
         try:
             # Cache the library handle and function signatures
             if not hasattr(self, '_x11_lib'):
@@ -320,6 +325,8 @@ class Sidebar(QMainWindow):
             # Explicitly set focus to web_view to ensure typing works
             if hasattr(self, 'content_widget') and self.content_widget.web_view:
                 self.content_widget.web_view.setFocus()
+                # Ensure it's active
+                self.content_widget.web_view.activateWindow()
 
             # We don't close the display here to keep it cached for the next call.
             # It will be cleaned up by OS or we can add a cleanup in closeEvent.
@@ -327,6 +334,17 @@ class Sidebar(QMainWindow):
         except Exception as e:
             logging.debug(f"X11 focus grab failed: {e}")
             self._x11_display = None  # Reset on failure
+
+    def focusInEvent(self, event):
+        logging.info(f"Qt Focus Event: {event.type().name}")
+        super().focusInEvent(event)
+        # When sidebar gets focus, ensure webview also has it
+        if hasattr(self, 'content_widget') and self.content_widget.web_view:
+            self.content_widget.web_view.setFocus()
+
+    def focusOutEvent(self, event):
+        logging.info(f"Qt Focus Event: {event.type().name}")
+        super().focusOutEvent(event)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -349,7 +367,7 @@ class Sidebar(QMainWindow):
 
         if target:
             geom = target.geometry()
-            logging.info(f"Target screen: {target.name()} | Geometry: {geom.x()},{geom.y()} {geom.width()}x{geom.height()}")
+            # logging.info(f"Target screen: {target.name()} | Geometry: {geom.x()},{geom.y()} {geom.width()}x{geom.height()}")
         return target
 
     def set_manual_screen(self, index):
@@ -676,7 +694,7 @@ class Sidebar(QMainWindow):
             new_w = target_width
             new_h = screen_geometry.height()
 
-            logging.info(f"Geometry: {new_x},{new_y} {new_w}x{new_h} on {self.active_screen.name()}")
+            # logging.info(f"Geometry: {new_x},{new_y} {new_w}x{new_h} on {self.active_screen.name()}")
             self.setGeometry(new_x, new_y, new_w, new_h)
 
         except Exception as e:
