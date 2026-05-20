@@ -65,7 +65,8 @@ class Sidebar(QMainWindow):
         try:
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint |
-                Qt.WindowType.Window |
+                Qt.WindowType.Tool |
+                Qt.WindowType.X11BypassWindowManagerHint |
                 Qt.WindowType.WindowStaysOnTopHint |
                 Qt.WindowType.NoDropShadowWindowHint
             )
@@ -141,11 +142,9 @@ class Sidebar(QMainWindow):
         if self.is_made_sticky or sys.platform != "linux" or QApplication.platformName() != 'xcb':
             return
 
-        xprop_path = shutil.which('xprop')
         wmctrl_path = shutil.which('wmctrl')
-
-        if not xprop_path or not wmctrl_path:
-            logging.warning(f"Required tools missing for sticky/dock: xprop={bool(xprop_path)}, wmctrl={bool(wmctrl_path)}")
+        if not wmctrl_path:
+            logging.warning("wmctrl missing, cannot set sticky bit")
             self.is_made_sticky = True
             return
 
@@ -153,34 +152,32 @@ class Sidebar(QMainWindow):
             win_id_ptr = self.winId()
             if not win_id_ptr:
                 return
-
-            win_id = int(win_id_ptr)
-            hex_id = hex(win_id)
-
-            # Set as UTILITY to help GNOME respect positioning while allowing focus
-            subprocess.run(
-                ['xprop', '-id', hex_id, '-f', '_NET_WM_WINDOW_TYPE', '32a', '-set', '_NET_WM_WINDOW_TYPE', '_NET_WM_WINDOW_TYPE_UTILITY'],
-                check=True, capture_output=True, text=True
-            )
-
-            # Explicitly set "Above" state for utility windows
-            subprocess.run(
-                ['xprop', '-id', hex_id, '-f', '_NET_WM_STATE', '32a', '-set', '_NET_WM_STATE', '_NET_WM_STATE_ABOVE'],
-                check=True, capture_output=True, text=True
-            )
+            hex_id = hex(int(win_id_ptr))
 
             # Standard sticky/skip flags
-            subprocess.run(
-                ['wmctrl', '-i', '-r', hex_id, '-b', 'add,sticky,skip_taskbar,skip_pager'],
-                check=True, capture_output=True, text=True
-            )
+            subprocess.run(['wmctrl', '-i', '-r', hex_id, '-b', 'add,sticky,skip_taskbar,skip_pager'],
+                           check=True, capture_output=True, text=True)
 
-            logging.info(f"Linux window {hex_id} configured as UTILITY + ABOVE + sticky.")
+            logging.info(f"Linux window {hex_id} configured as sticky.")
             self.is_made_sticky = True
-            self.update_position()
         except Exception as e:
             logging.error(f"Failed to configure Linux window: {e}")
             self.is_made_sticky = True
+
+    def _grab_focus_linux(self):
+        """Force focus on X11 even with BypassWindowManagerHint."""
+        if sys.platform == "linux" and QApplication.platformName() == 'xcb':
+            try:
+                x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+                display = x11.XOpenDisplay(None)
+                if display:
+                    # XSetInputFocus(display, window, revert_to, time)
+                    # RevertToParent = 1, CurrentTime = 0
+                    x11.XSetInputFocus(display, int(self.winId()), 1, 0)
+                    x11.XSync(display, False)
+                    x11.XCloseDisplay(display)
+            except Exception as e:
+                logging.debug(f"X11 focus grab failed: {e}")
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -236,6 +233,8 @@ class Sidebar(QMainWindow):
                 self.gesture_down_met = False
                 self.gesture_up_met = False
                 self.gesture_start_time = time.time()
+        else:
+            self._grab_focus_linux()
 
         super().enterEvent(event)
 
@@ -292,21 +291,7 @@ class Sidebar(QMainWindow):
 
     def mousePressEvent(self, event):
         self.activateWindow()
-
-        # Robust X11 focus grab for Linux/xcb
-        if sys.platform == "linux" and QApplication.platformName() == 'xcb':
-            try:
-                x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
-                display = x11.XOpenDisplay(None)
-                if display:
-                    # XSetInputFocus(display, window, revert_to, time)
-                    # RevertToParent = 1, CurrentTime = 0
-                    x11.XSetInputFocus(display, int(self.winId()), 1, 0)
-                    x11.XSync(display, False)
-                    x11.XCloseDisplay(display)
-            except Exception as e:
-                logging.debug(f"X11 focus grab failed: {e}")
-
+        self._grab_focus_linux()
         super().mousePressEvent(event)
 
     def leaveEvent(self, event):
@@ -456,6 +441,7 @@ class Sidebar(QMainWindow):
             self.raise_()
             self.activateWindow()
             self.setFocus()
+            self._grab_focus_linux()
 
         except Exception as e:
             logging.error(f"Error in show_sidebar: {e}", exc_info=True)
@@ -518,33 +504,26 @@ class Sidebar(QMainWindow):
 
     def update_position(self, _=None):
         try:
-            # Luôn cập nhật màn hình mục tiêu trước khi tính toán tọa độ
+            # Always update target screen before calculating coordinates
             self.active_screen = self.get_target_screen()
             if not self.active_screen:
                 return
 
             screen_geometry = self.active_screen.geometry()
 
-            # Xác định chiều rộng mục tiêu
+            # Determine target width
             if self.is_visible:
                 target_width = self.last_width or self.calculate_width(screen_geometry.width())
             else:
                 target_width = 5
 
-            # Tọa độ X tuyệt đối
+            # Absolute coordinates
             new_x = screen_geometry.x() + screen_geometry.width() - target_width
             new_y = screen_geometry.y()
             new_w = target_width
             new_h = screen_geometry.height()
 
-            # Force screen association for Linux/xcb to fight GNOME's placement
-            if sys.platform == "linux" and QApplication.platformName() == 'xcb':
-                if self.windowHandle():
-                    if self.windowHandle().screen() != self.active_screen:
-                        self.windowHandle().setScreen(self.active_screen)
-                    # Be extra aggressive: force position to target screen's top-left before setGeometry
-                    self.windowHandle().setPosition(screen_geometry.topLeft())
-
+            logging.info(f"Geometry: {new_x},{new_y} {new_w}x{new_h} on {self.active_screen.name()}")
             self.setGeometry(new_x, new_y, new_w, new_h)
 
         except Exception as e:
