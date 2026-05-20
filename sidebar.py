@@ -438,7 +438,7 @@ class Sidebar(QMainWindow):
 
             # Log kết quả thực tế sau khi đặt
             actual_geo = self.geometry()
-            logging.info(f"ACTUAL GEOMETRY after move: x={actual_geo.x()}, y={actual_geo.y()}, w={actual_geo.w()}, h={actual_geo.h()}")
+            logging.info(f"ACTUAL GEOMETRY after move: x={actual_geo.x()}, y={actual_geo.y()}, w={actual_geo.width()}, h={actual_geo.height()}")
 
             if actual_geo.x() != new_x:
                 logging.warning(f"POSITION MISMATCH! Expected x={new_x}, got x={actual_geo.x()}. OS or Window Manager might be clamping the window.")
