@@ -341,14 +341,14 @@ class Sidebar(QMainWindow):
 
             # Đánh dấu trạng thái hiển thị nhưng CHƯA tăng opacity ngay
             self.is_visible = True
-            
+
             # Cập nhật vị trí và kích thước ngay lập tức (vẫn đang opacity 0.01)
             self.update_position()
 
             # Sau khi đã ở đúng vị trí, mới hiện nguyên hình
             # Sử dụng delay cực ngắn để đảm bảo compositor đã kịp cập nhật vị trí
             QTimer.singleShot(30, lambda: self.setWindowOpacity(1.0))
-            
+
             self.setStyleSheet("QMainWindow { background-color: #33322F; }")
             if hasattr(self, 'centralWidget') and self.centralWidget():
                 self.centralWidget().setStyleSheet("background-color: transparent;")
@@ -366,7 +366,7 @@ class Sidebar(QMainWindow):
 
             # Giảm opacity TRƯỚC khi thu nhỏ để tránh thấy window bị co lại
             self.setWindowOpacity(0.01)
-            
+
             # Đợi một chút cho opacity mờ hẳn rồi mới thu nhỏ về dải cảm ứng
             def finalize_hide():
                 self.is_visible = False
@@ -439,10 +439,10 @@ class Sidebar(QMainWindow):
                 # Ép screen và tọa độ cùng lúc để phá clamping
                 self.windowHandle().setScreen(self.active_screen)
 
-            # Sử dụng chiều rộng mục tiêu: 
-            # Nếu đang hiện thì là last_width, nếu đang ẩn thì là 5px
-            target_width = self.width()
-            if not self.is_visible:
+            # Xác định chiều rộng mục tiêu
+            if self.is_visible:
+                target_width = self.last_width or self.calculate_width(screen_geometry.width())
+            else:
                 target_width = 5
 
             # Đảm bảo chiều rộng sidebar không vượt quá 90% chiều rộng màn hình hiện tại
