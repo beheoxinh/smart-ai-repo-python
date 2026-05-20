@@ -402,12 +402,12 @@ class Sidebar(QMainWindow):
                 logging.warning("update_position: No active screen found.")
                 return
 
-            # QUAN TRỌNG: Cần chuyển window sang đúng màn hình target trước khi set geometry
-            # Điều này giúp Qt tính toán hệ tọa độ chính xác trên một số hệ điều hành
-            if self.windowHandle():
-                self.windowHandle().setScreen(self.active_screen)
-
             screen_geometry = self.active_screen.geometry()
+
+            # QUAN TRỌNG: Kiểm tra xem window đã ở đúng screen chưa
+            if self.windowHandle() and self.windowHandle().screen() != self.active_screen:
+                logging.info(f"Switching window handle from {self.windowHandle().screen().name()} to {self.active_screen.name()}")
+                self.windowHandle().setScreen(self.active_screen)
 
             # Sử dụng chiều rộng mục tiêu: 
             # Nếu đang hiện thì là last_width, nếu đang ẩn thì là 5px
@@ -422,15 +422,26 @@ class Sidebar(QMainWindow):
                 target_width = max_allowed_width
 
             bottom_margin = 64
+            # Tọa độ X tuyệt đối trên toàn bộ không gian desktop
             new_x = screen_geometry.x() + screen_geometry.width() - target_width
             new_y = screen_geometry.y()
             new_w = target_width
             new_h = screen_geometry.height() - bottom_margin
 
-            logging.info(f"MOVING WINDOW to: Screen={self.active_screen.name()} | Target Rect: x={new_x}, y={new_y}, w={new_w}, h={new_h} | IsVisible: {self.is_visible}")
+            logging.info(
+                f"MOVING WINDOW to: Screen={self.active_screen.name()} (Global X: {screen_geometry.x()}) | Target Rect: x={new_x}, y={new_y}, w={new_w}, h={new_h} | IsVisible: {self.is_visible}")
 
-            # Sử dụng setGeometry để thay đổi cả vị trí và kích thước cùng lúc
-            self.setGeometry(new_x, new_y, new_w, new_h)
+            # Trên Linux X11/XCB, đôi khi setGeometry không đủ để nhảy màn hình nếu window đang show.
+            # Ta sẽ thử combo: move + resize riêng biệt để ép hệ điều hành cập nhật.
+            self.move(new_x, new_y)
+            self.resize(new_w, new_h)
+
+            # Log kết quả thực tế sau khi đặt
+            actual_geo = self.geometry()
+            logging.info(f"ACTUAL GEOMETRY after move: x={actual_geo.x()}, y={actual_geo.y()}, w={actual_geo.w()}, h={actual_geo.h()}")
+
+            if actual_geo.x() != new_x:
+                logging.warning(f"POSITION MISMATCH! Expected x={new_x}, got x={actual_geo.x()}. OS or Window Manager might be clamping the window.")
 
         except Exception as e:
             logging.error(f"Error in update_position: {e}", exc_info=True)
