@@ -368,22 +368,24 @@ class Sidebar(QMainWindow):
         try:
             if not initial and (self.is_resizing or not self.is_visible): return
 
-            # DEBUG: Tô đỏ rực toàn bộ container để nhìn thấy dải cảm ứng
-            red_style = "background-color: rgba(255, 0, 0, 255);"
-            self.setStyleSheet(f"QMainWindow {{ {red_style} }}")
+            # Make sensor area transparent
+            transparent_style = "background-color: transparent;"
+            self.setStyleSheet(f"QMainWindow {{ {transparent_style} }}")
             if hasattr(self, 'centralWidget') and self.centralWidget():
-                self.centralWidget().setStyleSheet(red_style)
+                self.centralWidget().setStyleSheet(transparent_style)
 
-            self.setWindowOpacity(0.8)  # Tăng opacity lên cho dễ thấy
+            # Set a very low opacity for the sensor area so it's invisible but still catches mouse events
+            self.setWindowOpacity(0.01)
 
             self.is_visible = False
-            # Chiều rộng 5px
+            # Width 5px for the sensor
             self.setFixedWidth(5)
 
             if not initial:
                 self.update_position()
             else:
                 self.show()
+                # Use a small delay to ensure coordinates are correct after initialization
                 QTimer.singleShot(50, self.update_position)
 
         except Exception as e:
