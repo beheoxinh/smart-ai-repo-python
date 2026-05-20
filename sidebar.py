@@ -335,8 +335,8 @@ class Sidebar(QMainWindow):
                 self.active_screen = QApplication.primaryScreen()
 
             # BẮT BUỘC: Ép screen trước khi gọi show()
-            # createWinId() đảm bảo windowHandle() được tạo ra
-            self.createWinId()
+            # winId() đảm bảo windowHandle() được tạo ra
+            self.winId()
             if self.windowHandle():
                 logging.info(f"PRE-SHOW: Setting screen to {self.active_screen.name()}")
                 self.windowHandle().setScreen(self.active_screen)
