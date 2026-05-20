@@ -157,9 +157,15 @@ class Sidebar(QMainWindow):
             win_id = int(win_id_ptr)
             hex_id = hex(win_id)
 
-            # Set as DOCK to help GNOME respect positioning
+            # Set as UTILITY to help GNOME respect positioning while allowing focus
             subprocess.run(
-                ['xprop', '-id', hex_id, '-f', '_NET_WM_WINDOW_TYPE', '32a', '-set', '_NET_WM_WINDOW_TYPE', '_NET_WM_WINDOW_TYPE_DOCK'],
+                ['xprop', '-id', hex_id, '-f', '_NET_WM_WINDOW_TYPE', '32a', '-set', '_NET_WM_WINDOW_TYPE', '_NET_WM_WINDOW_TYPE_UTILITY'],
+                check=True, capture_output=True, text=True
+            )
+
+            # Explicitly set "Above" state for utility windows
+            subprocess.run(
+                ['xprop', '-id', hex_id, '-f', '_NET_WM_STATE', '32a', '-set', '_NET_WM_STATE', '_NET_WM_STATE_ABOVE'],
                 check=True, capture_output=True, text=True
             )
 
@@ -169,7 +175,7 @@ class Sidebar(QMainWindow):
                 check=True, capture_output=True, text=True
             )
 
-            logging.info(f"Linux window {hex_id} configured as DOCK + sticky.")
+            logging.info(f"Linux window {hex_id} configured as UTILITY + ABOVE + sticky.")
             self.is_made_sticky = True
             self.update_position()
         except Exception as e:
@@ -191,8 +197,14 @@ class Sidebar(QMainWindow):
     def get_target_screen(self):
         screens = QApplication.screens()
         if 0 <= self.manual_screen_index < len(screens):
-            return screens[self.manual_screen_index]
-        return self.get_rightmost_screen()
+            target = screens[self.manual_screen_index]
+        else:
+            target = self.get_rightmost_screen()
+
+        if target:
+            geom = target.geometry()
+            logging.info(f"Target screen: {target.name()} | Geometry: {geom.x()},{geom.y()} {geom.width()}x{geom.height()}")
+        return target
 
     def set_manual_screen(self, index):
         self.manual_screen_index = index
@@ -434,6 +446,7 @@ class Sidebar(QMainWindow):
             # Fight GNOME's automatic window placement
             QTimer.singleShot(50, self.update_position)
             QTimer.singleShot(200, self.update_position)
+            QTimer.singleShot(500, self.update_position)
 
             def restore_opacity():
                 self.setWindowOpacity(1.0)
@@ -524,9 +537,13 @@ class Sidebar(QMainWindow):
             new_w = target_width
             new_h = screen_geometry.height()
 
-            # Ép window handle sang đúng screen nếu cần (chỉ làm khi thực sự lệch màn hình)
-            if self.windowHandle() and self.windowHandle().screen() != self.active_screen:
-                self.windowHandle().setScreen(self.active_screen)
+            # Force screen association for Linux/xcb to fight GNOME's placement
+            if sys.platform == "linux" and QApplication.platformName() == 'xcb':
+                if self.windowHandle():
+                    if self.windowHandle().screen() != self.active_screen:
+                        self.windowHandle().setScreen(self.active_screen)
+                    # Be extra aggressive: force position to target screen's top-left before setGeometry
+                    self.windowHandle().setPosition(screen_geometry.topLeft())
 
             self.setGeometry(new_x, new_y, new_w, new_h)
 
