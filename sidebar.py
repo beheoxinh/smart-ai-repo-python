@@ -213,7 +213,7 @@ class Sidebar(QMainWindow):
         if not self.is_visible:
             # Nếu đã có gesture dở dang, ta kiểm tra xem vị trí mới có "gần" vị trí cũ không
             # Nếu quá xa (ví dụ > 50px) thì coi như gesture mới hoàn toàn
-            is_far = self.gesture_entry_y is not None and abs(curr_y - self.gesture_entry_y) > 50
+            is_far = self.gesture_entry_y is not None and abs(curr_y - self.gesture_entry_y) > 10
 
             if self.gesture_entry_y is None or is_far:
                 self.gesture_entry_y = curr_y
@@ -234,6 +234,12 @@ class Sidebar(QMainWindow):
         if not self.is_visible and self.gesture_entry_y is not None:
             curr_y = event.position().y()
 
+            # Throttle processing to save CPU (e.g., only process if moved significantly or every N ms)
+            if hasattr(self, '_last_processed_y') and abs(curr_y - self._last_processed_y) < 5:
+                super().mouseMoveEvent(event)
+                return
+            self._last_processed_y = curr_y
+
             # Cập nhật min/max Y đã đi qua kể từ khi Enter
             if not hasattr(self, 'gesture_min_y'): self.gesture_min_y = curr_y
             if not hasattr(self, 'gesture_max_y'): self.gesture_max_y = curr_y
@@ -242,9 +248,9 @@ class Sidebar(QMainWindow):
             self.gesture_max_y = max(self.gesture_max_y, curr_y)
 
             # Check di xuống: Đã di chuyển xuống ít nhất 50px so với điểm cao nhất
-            if not self.gesture_down_met and (curr_y - self.gesture_min_y) > 100:
+            if not self.gesture_down_met and (curr_y - self.gesture_min_y) > 200:
                 self.gesture_down_met = True
-                logging.info(f"   [GESTURE STEP] Step: Down > 50px OK (Current={curr_y}, Min={self.gesture_min_y})")
+                logging.info(f"   [GESTURE STEP] Step: Down > 200px OK (Current={curr_y}, Min={self.gesture_min_y})")
 
             # Check di lên: Đã di chuyển lên ít nhất 50px so với điểm thấp nhất
             if not self.gesture_up_met and (self.gesture_max_y - curr_y) > 100:
