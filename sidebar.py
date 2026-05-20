@@ -289,12 +289,12 @@ class Sidebar(QMainWindow):
             self.gesture_min_y = min(self.gesture_min_y, curr_y)
             self.gesture_max_y = max(self.gesture_max_y, curr_y)
 
-            # Check di xuống: Đã di chuyển xuống ít nhất 50px so với điểm cao nhất
-            if not self.gesture_down_met and (curr_y - self.gesture_min_y) > 50:
+            # Check di xuống: Đã di chuyển xuống ít nhất 200px so với điểm cao nhất
+            if not self.gesture_down_met and (curr_y - self.gesture_min_y) > 200:
                 self.gesture_down_met = True
 
-            # Check di lên: Đã di chuyển lên ít nhất 50px so với điểm thấp nhất
-            if not self.gesture_up_met and (self.gesture_max_y - curr_y) > 50:
+            # Check di lên: Đã di chuyển lên ít nhất 200px so với điểm thấp nhất
+            if not self.gesture_up_met and (self.gesture_max_y - curr_y) > 200:
                 self.gesture_up_met = True
 
             # Kiểm tra thời gian: Nếu quá 1s kể từ lúc bắt đầu thì reset
