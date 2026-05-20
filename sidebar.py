@@ -76,8 +76,9 @@ class Sidebar(QMainWindow):
         try:
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint |
-                Qt.WindowType.Tool |
-                Qt.WindowType.WindowStaysOnTopHint
+                Qt.WindowType.ToolTip |
+                Qt.WindowType.WindowStaysOnTopHint |
+                Qt.WindowType.NoDropShadowWindowHint
             )
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
@@ -425,6 +426,8 @@ class Sidebar(QMainWindow):
                 return
 
             screen_geometry = self.active_screen.geometry()
+            dpr = self.devicePixelRatioF()
+            logging.info(f"Device Pixel Ratio (DPR): {dpr}")
             platform = QApplication.platformName()
             is_wayland_session = os.environ.get("XDG_SESSION_TYPE") == "wayland"
 
