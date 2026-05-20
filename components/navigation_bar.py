@@ -6,7 +6,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QPoint
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QPushButton, QSpacerItem,
-    QSizePolicy, QMenu, QApplication, QMessageBox, QWidget, QDialog
+    QSizePolicy, QMenu, QApplication, QMessageBox, QDialog
 )
 
 from components.menu_setting_dialog import MenuSettingDialog
@@ -24,11 +24,12 @@ class NavigationBar(QFrame):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.app_paths = AppPaths() 
+        self.app_paths = AppPaths()
         self.buttons = []
         self.button_data = []
         self.drag_start_pos = None
         self.config_path = os.path.join(self.app_paths.get_data_dir('config'), 'nav_config.json')
+        self.user_images_dir = self.app_paths.get_data_dir('config/images')
         self.setup_ui()
         self.load_config()
 
@@ -172,9 +173,9 @@ class NavigationBar(QFrame):
         idx = self.buttons.index(button)
         current_data = self.button_data[idx]
 
-        dialog = MenuSettingDialog(parent=self.window(), mode="edit")
+        dialog = MenuSettingDialog(parent=self.window(), mode="edit", images_dir=self.user_images_dir)
         dialog.prefill(current_data)
-        
+
         self.menu_state_changed.emit(True)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             new_data = dialog.get_data()
@@ -188,8 +189,8 @@ class NavigationBar(QFrame):
         self.menu_state_changed.emit(False)
 
     def open_add_button_dialog(self):
-        dialog = MenuSettingDialog(parent=self.window(), mode="add")
-        
+        dialog = MenuSettingDialog(parent=self.window(), mode="add", images_dir=self.user_images_dir)
+
         self.menu_state_changed.emit(True)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             new_data = dialog.get_data()
@@ -292,14 +293,16 @@ class NavigationBar(QFrame):
         self.buttons.clear()
 
         for data in self.button_data:
-            icon_full_path = self.app_paths.get_path('images', data['icon'])
+            icon_full_path = os.path.join(self.user_images_dir, data['icon'])
             if not os.path.exists(icon_full_path):
-                icon_full_path = self.app_paths.get_path('images', 'default.svg')
+                icon_full_path = self.app_paths.get_path('images', data['icon'])
+                if not os.path.exists(icon_full_path):
+                    icon_full_path = self.app_paths.get_path('images', 'default.svg')
 
             btn = self.add_button(icon_full_path, data['tooltip'], data['url'])
             self.center_layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignHCenter)
             self.buttons.append(btn)
-        
+
         self.rebuild_layout()
 
     def save_config(self):
@@ -312,6 +315,8 @@ class NavigationBar(QFrame):
         is_used = any(data['icon'] == icon_filename for data in self.button_data)
         if not is_used:
             try:
-                pass
+                icon_path = os.path.join(self.user_images_dir, icon_filename)
+                if os.path.exists(icon_path):
+                    os.remove(icon_path)
             except Exception as e:
                 print(f"Error during icon cleanup check: {e}")

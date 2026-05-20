@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Golãng AI Sidebar</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <div>
+          <p class="brand-primary">Golang</p>
+          <p class="brand-secondary">AI Sidebar</p>
+        </div>
+        <button type="button" id="add-button" aria-label="Add shortcut">+</button>
+      </div>
+
+      <div id="nav-list" role="menu" aria-label="AI shortcuts"></div>
+
+      <div class="sidebar-footer">
+        <span id="status-label">Your shortcuts stay synced locally.</span>
+      </div>
+    </aside>
+
+    <section id="content">
+      <header class="content-meta">
+        <p id="current-title">Loading...</p>
+        <div class="content-actions">
+          <button id="refresh-slot" type="button" aria-label="Reload frame">⟳</button>
+          <button id="open-link" type="button" aria-label="Open in browser">↗</button>
+        </div>
+      </header>
+      <iframe id="content-frame" title="AI web preview" src="" frameborder="0"></iframe>
+    </section>
+  </div>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Add shortcut">
+    <div class="modal-shell">
+      <h3>Add a shortcut</h3>
+      <form id="shortcut-form">
+        <label>
+          Tooltip
+          <input name="tooltip" placeholder="Search AI models" required />
+        </label>
+        <label>
+          URL
+          <input name="url" placeholder="https://example.com" required />
+        </label>
+        <label>
+          Icon
+          <input name="icon" placeholder="claude.svg" required />
+        </label>
+        <label class="inline">
+          Order
+          <input name="order" type="number" min="0" value="0" />
+        </label>
+        <label class="inline checkbox">
+          <input name="pinned" type="checkbox" checked />
+          Keep pinned (always visible)
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="cancel-btn">Cancel</button>
+          <button type="submit">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

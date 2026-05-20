@@ -9,13 +9,9 @@ import requests
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QVBoxLayout, QLineEdit, QPushButton, QMessageBox,
-    QWidget, QHBoxLayout, QFileDialog, QDialog, QDialogButtonBox,
+    QHBoxLayout, QFileDialog, QDialog, QDialogButtonBox,
     QCheckBox, QSpinBox, QLabel, QSpacerItem, QSizePolicy
 )
-
-BASE_DIR = os.path.abspath(os.getcwd())
-IMAGES_DIR = os.path.join(BASE_DIR, "images")
-os.makedirs(IMAGES_DIR, exist_ok=True)
 
 
 def random_filename(ext='png'):
@@ -24,9 +20,11 @@ def random_filename(ext='png'):
 
 
 class MenuSettingDialog(QDialog):
-    def __init__(self, parent=None, mode="add"):
+    def __init__(self, parent=None, mode="add", images_dir=None):
         super().__init__(parent)
         self.mode = mode
+        self.images_dir = images_dir or os.path.join(os.path.abspath(os.getcwd()), "images")
+        os.makedirs(self.images_dir, exist_ok=True)
         self.setWindowTitle(f"{mode.capitalize()} Menu Item")
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         self.setStyleSheet("background-color: #2E2E2E; color: white;")
@@ -101,12 +99,15 @@ class MenuSettingDialog(QDialog):
                 response = requests.get(icon, timeout=5)
                 content_type = response.headers.get("Content-Type", "")
                 ext = "png"
-                if "svg" in content_type: ext = "svg"
-                elif "jpeg" in content_type or "jpg" in content_type: ext = "jpg"
-                elif "webp" in content_type: ext = "webp"
+                if "svg" in content_type:
+                    ext = "svg"
+                elif "jpeg" in content_type or "jpg" in content_type:
+                    ext = "jpg"
+                elif "webp" in content_type:
+                    ext = "webp"
 
                 filename = random_filename(ext)
-                save_path = os.path.join(IMAGES_DIR, filename)
+                save_path = os.path.join(self.images_dir, filename)
                 with open(save_path, 'wb') as f:
                     f.write(response.content)
                 icon = filename
@@ -134,7 +135,7 @@ class MenuSettingDialog(QDialog):
         if file_path:
             try:
                 filename = os.path.basename(file_path)
-                dest_path = os.path.join(IMAGES_DIR, filename)
+                dest_path = os.path.join(self.images_dir, filename)
                 if not os.path.exists(dest_path):
                     shutil.copy(file_path, dest_path)
                 self.icon_input.setText(filename)

@@ -1,8 +1,9 @@
 # File: components/sidebar.py (Cross-platform version)
-import sys
-import subprocess
 import logging
 import shutil
+import subprocess
+import sys
+
 try:
     import win32gui
     import win32api
@@ -10,14 +11,15 @@ except ImportError:
     win32gui = None
     win32api = None
 
-from PyQt6.QtCore import Qt, QTimer, QPoint, QEvent, QUrl, QRect
+from PyQt6.QtCore import Qt, QTimer, QUrl
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QApplication
-from PyQt6.QtGui import QCursor, QShortcut, QKeySequence, QMouseEvent
+from PyQt6.QtGui import QCursor, QShortcut, QKeySequence
 
 from components.resize_handle import ResizeHandle
 from components.content_widget import ContentWidget
 from components.bottom_bar import BottomBar
-from utils import alert_popup 
+from utils import alert_popup
+
 
 class Sidebar(QMainWindow):
     def __init__(self):
@@ -29,11 +31,11 @@ class Sidebar(QMainWindow):
         self.active_screen = None
         self.is_resizing = False
         self.has_active_popup = False
-        self.is_nav_menu_open = False 
+        self.is_nav_menu_open = False
         self.is_webview_menu_open = False
         self.popup_windows = []
         self.last_width = None
-        self.is_made_sticky = False # Flag for workspace stickiness
+        self.is_made_sticky = False  # Flag for workspace stickiness
         self.init_ui()
         self.setup_shortcut()
 
@@ -52,7 +54,7 @@ class Sidebar(QMainWindow):
                 Qt.WindowType.WindowStaysOnTopHint
             )
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-            
+
             container = QWidget()
             container_layout = QHBoxLayout(container)
             container_layout.setContentsMargins(0, 0, 0, 0)
@@ -86,14 +88,20 @@ class Sidebar(QMainWindow):
             if primary_screen:
                 self.last_width = self.calculate_width(primary_screen.geometry().width())
 
-            self.active_screen = QApplication.primaryScreen()
+            self.active_screen = self.get_rightmost_screen()
+
+            # Kết nối các tín hiệu khi thay đổi cấu hình màn hình
+            app_instance = QApplication.instance()
+            if app_instance:
+                app_instance.screenAdded.connect(self.update_position)
+                app_instance.screenRemoved.connect(self.update_position)
 
             self.setStyleSheet("""
                 QMainWindow {
                     background-color: #33322F;
                 }
             """)
-            
+
             self.hide_sidebar(initial=True)
 
         except Exception as e:
@@ -107,17 +115,17 @@ class Sidebar(QMainWindow):
 
         if not shutil.which('wmctrl'):
             logging.warning("`wmctrl` not found. Cannot make the window sticky across workspaces. Please install it (e.g., 'sudo apt-get install wmctrl').")
-            self.is_made_sticky = True # Don't try again
+            self.is_made_sticky = True  # Don't try again
             return
 
         try:
             win_id_ptr = self.winId()
             if not win_id_ptr:
-                return # Window not ready yet
+                return  # Window not ready yet
 
             win_id = int(win_id_ptr)
             hex_id = hex(win_id)
-            
+
             subprocess.run(
                 ['wmctrl', '-i', '-r', hex_id, '-b', 'add,sticky'],
                 check=True,
@@ -128,7 +136,7 @@ class Sidebar(QMainWindow):
             self.is_made_sticky = True
         except (subprocess.CalledProcessError, FileNotFoundError, TypeError) as e:
             logging.error(f"Failed to make window sticky using wmctrl: {e}")
-            self.is_made_sticky = True # Don't try again
+            self.is_made_sticky = True  # Don't try again
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -144,15 +152,24 @@ class Sidebar(QMainWindow):
         self.is_webview_menu_open = is_open
         logging.info(f"Webview context menu state changed: {'Open' if is_open else 'Closed'}")
 
+    def get_rightmost_screen(self):
+        screens = QApplication.screens()
+        if not screens:
+            return QApplication.primaryScreen()
+        # Sắp xếp các màn hình theo tọa độ x + width để tìm màn hình ngoài cùng bên phải
+        return max(screens, key=lambda s: s.geometry().x() + s.geometry().width())
+
     def enterEvent(self, event):
         if not self.is_visible and not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
-            screen = QApplication.screenAt(QCursor.pos())
+            # Luôn kiểm tra màn hình ngoài cùng bên phải thay vì màn hình hiện tại của chuột
+            # để tránh việc sidebar hiện ở giữa 2 màn hình
+            screen = self.get_rightmost_screen()
             if screen and self.is_foreground_fullscreen(screen):
                 return
-            
+
             self.active_screen = screen
             self.show_sidebar()
-        
+
         super().enterEvent(event)
 
     def leaveEvent(self, event):
@@ -160,7 +177,7 @@ class Sidebar(QMainWindow):
             return
         if self.is_visible and not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
             self.hide_sidebar()
-        
+
         super().leaveEvent(event)
 
     def handle_navigation(self, url):
@@ -198,7 +215,7 @@ class Sidebar(QMainWindow):
                 if not (flags & Qt.WindowType.WindowStaysOnTopHint):
                     self.setWindowFlags(flags | Qt.WindowType.WindowStaysOnTopHint)
                     self.show()
-                
+
                 self.raise_()
                 self.activateWindow()
         except Exception as e:
@@ -213,6 +230,36 @@ class Sidebar(QMainWindow):
             alert_popup(self, "WebView Redirect Error", f"Error handling webview redirect: {e}")
 
     def is_foreground_fullscreen(self, screen):
+        try:
+            if sys.platform == "win32" and win32gui is not None:
+                hwnd = win32gui.GetForegroundWindow()
+                if not hwnd:
+                    return False
+                if hwnd == win32gui.GetDesktopWindow() or hwnd == win32gui.FindWindow("Progman", None) or hwnd == win32gui.FindWindow("WorkerW", None):
+                    return False
+                rect = win32gui.GetWindowRect(hwnd)
+                win_width = rect[2] - rect[0]
+                win_height = rect[3] - rect[1]
+                screen_width = screen.geometry().width()
+                screen_height = screen.geometry().height()
+                return win_width >= screen_width and win_height >= screen_height
+
+            elif sys.platform == "linux":
+                import subprocess
+                try:
+                    # Chỉ kiểm tra chính xác Active Window thông qua xprop. 
+                    # Nếu nó có cờ FULLSCREEN thì mới block sidebar.
+                    active_win_out = subprocess.check_output(['xprop', '-root', '32x', '\t$0', '_NET_ACTIVE_WINDOW'], stderr=subprocess.DEVNULL).decode().strip()
+                    win_id = active_win_out.split('\t')[-1].strip()
+                    if win_id and win_id != "0x0":
+                        win_props = subprocess.check_output(['xprop', '-id', win_id, '_NET_WM_STATE'], stderr=subprocess.DEVNULL).decode()
+                        if '_NET_WM_STATE_FULLSCREEN' in win_props:
+                            return True
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logging.error(f"Error checking fullscreen state: {e}")
         return False
 
     def toggle_sidebar(self):
@@ -227,21 +274,21 @@ class Sidebar(QMainWindow):
     def show_sidebar(self):
         try:
             if self.is_visible: return
-            
+
             if not self.active_screen:
                 self.active_screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
 
             target_width = self.last_width or self.calculate_width(self.active_screen.geometry().width())
-            
+
             self.setWindowOpacity(1.0)
             self.setFixedWidth(target_width)
             self.update_position()
             self.is_visible = True
-            
+
             self.show()
             self.raise_()
             self.activateWindow()
-            
+
         except Exception as e:
             logging.error(f"Error in show_sidebar: {e}", exc_info=True)
             alert_popup(self, "Show Sidebar Error", f"Error showing sidebar: {e}")
@@ -291,10 +338,10 @@ class Sidebar(QMainWindow):
         cursor_pos = QCursor.pos()
         return QApplication.screenAt(cursor_pos)
 
-    def update_position(self):
+    def update_position(self, _=None):
         try:
-            if not self.active_screen:
-                self.active_screen = self.get_screen_at_cursor() or QApplication.primaryScreen()
+            # Luôn định vị sidebar ở màn hình ngoài cùng bên phải
+            self.active_screen = self.get_rightmost_screen()
 
             screen_geometry = self.active_screen.geometry()
             bottom_margin = 64
@@ -311,15 +358,15 @@ class Sidebar(QMainWindow):
     def update_width_and_x_position(self):
         try:
             if not self.active_screen:
-                self.active_screen = self.get_screen_at_cursor() or QApplication.primaryScreen()
-            
+                self.active_screen = self.get_rightmost_screen()
+
             screen_geometry = self.active_screen.geometry()
-            
+
             current_y = self.y()
             current_height = self.height()
-            
+
             new_x = screen_geometry.x() + screen_geometry.width() - self.width()
-            
+
             self.move(new_x, current_y)
 
         except Exception as e:

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=SmartAI
+Exec=/mnt/WannaBeTheGuy/WwW/MyOwn/python_ai_sidebar/parse to rust_ai_sidebar/rust_ai_sidebar/src-tauri/target/release/rust_ai_sidebar
+Icon=/mnt/WannaBeTheGuy/WwW/MyOwn/python_ai_sidebar/parse to rust_ai_sidebar/rust_ai_sidebar/src-tauri/icons/icon.png
+Type=Application
+Categories=Development;
