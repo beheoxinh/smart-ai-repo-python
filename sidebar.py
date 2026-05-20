@@ -40,6 +40,11 @@ class Sidebar(QMainWindow):
         self.manual_screen_index = -1  # -1 means auto (rightmost)
         self.last_mouse_screen = None
 
+        # Gesture Trigger State
+        self.gesture_entry_y = None
+        self.gesture_down_met = False
+        self.gesture_up_met = False
+
         self.init_ui()
         self.setup_shortcut()
 
@@ -81,6 +86,7 @@ class Sidebar(QMainWindow):
                 Qt.WindowType.NoDropShadowWindowHint
             )
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            self.setMouseTracking(True)
 
             container = QWidget()
             container_layout = QHBoxLayout(container)
@@ -210,18 +216,52 @@ class Sidebar(QMainWindow):
         cursor_pos = QCursor.pos()
         logging.info(f"Mouse EnterEvent tại: x={cursor_pos.x()}, y={cursor_pos.y()}")
 
-        if not self.is_visible and not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
-            # Sử dụng màn hình mục tiêu (auto hoặc manual)
-            screen = self.get_target_screen()
-            if screen and self.is_foreground_fullscreen(screen):
-                return
-
-            self.active_screen = screen
-            self.show_sidebar()
+        # Bắt đầu theo dõi gesture khi chuột bước vào vùng cảm ứng
+        if not self.is_visible:
+            self.gesture_entry_y = cursor_pos.y()
+            self.gesture_down_met = False
+            self.gesture_up_met = False
+            logging.info(f"Gesture started at Y={self.gesture_entry_y}")
 
         super().enterEvent(event)
 
+    def mouseMoveEvent(self, event):
+        # Chỉ xử lý gesture khi sidebar đang ở chế độ cảm ứng (5px)
+        if not self.is_visible and self.gesture_entry_y is not None:
+            curr_y = QCursor.pos().y()
+
+            # Check di xuống > 100px
+            if not self.gesture_down_met and (curr_y - self.gesture_entry_y) > 100:
+                self.gesture_down_met = True
+                logging.info("Gesture step 1/2: Down > 100px MET")
+
+            # Check di lên > 100px
+            if not self.gesture_up_met and (self.gesture_entry_y - curr_y) > 100:
+                self.gesture_up_met = True
+                logging.info("Gesture step 2/2: Up > 100px MET")
+
+            # Nếu thỏa mãn cả 2 thì hiện sidebar
+            if self.gesture_down_met and self.gesture_up_met:
+                logging.info("GESTURE COMPLETE! Showing sidebar...")
+
+                # Reset gesture ngay để tránh trigger liên tục
+                self.gesture_entry_y = None
+
+                if not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
+                    screen = self.get_target_screen()
+                    if screen and self.is_foreground_fullscreen(screen):
+                        return
+                    self.active_screen = screen
+                    self.show_sidebar()
+
+        super().mouseMoveEvent(event)
+
     def leaveEvent(self, event):
+        # Reset gesture khi rời vùng cảm ứng
+        self.gesture_entry_y = None
+        self.gesture_down_met = False
+        self.gesture_up_met = False
+
         if QApplication.mouseButtons() == Qt.MouseButton.LeftButton:
             return
         if self.is_visible and not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
