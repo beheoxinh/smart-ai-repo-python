@@ -117,8 +117,13 @@ class Sidebar(QMainWindow):
             self.content_widget.nav_bar.menu_state_changed.connect(self.on_nav_menu_state_changed)
             self.content_widget.context_menu_state_changed.connect(self.on_webview_menu_state_changed)
 
-            container_layout.addWidget(main_widget)
             self.setCentralWidget(container)
+
+            # Ép minimum width về 0 để có thể thu nhỏ cửa sổ về dải cảm ứng (sensor)
+            self.setMinimumWidth(0)
+            self.main_ui_container.setMinimumWidth(0)
+            if hasattr(self, 'resize_handle'):
+                self.resize_handle.setMinimumWidth(0)
 
             primary_screen = QApplication.primaryScreen()
             if primary_screen:
@@ -217,40 +222,56 @@ class Sidebar(QMainWindow):
     def enterEvent(self, event):
         # Log tọa độ chuột để debug
         cursor_pos = QCursor.pos()
-        logging.info(f"==> MẮT THẦN: Mouse ENTER at x={cursor_pos.x()}, y={cursor_pos.y()} | Current Visible={self.is_visible}")
+        curr_y = cursor_pos.y()
+        logging.info(f"==> MẮT THẦN: Mouse ENTER at x={cursor_pos.x()}, y={curr_y} | Current Visible={self.is_visible}")
 
-        # Chỉ reset gesture nếu chuột vào một vùng Y hoàn toàn mới hoặc lâu rồi không chạm
-        # Nếu đang dở gesture mà lỡ văng ra rồi vào lại ngay (trong vùng 15px) thì vẫn cho tiếp tục
+        # Khởi tạo tracking gesture nếu chưa có hoặc nếu đây là lần enter mới (không phải resume)
         if not self.is_visible:
-            if self.gesture_entry_y is None:
-                self.gesture_entry_y = cursor_pos.y()
+            # Nếu đã có gesture dở dang, ta kiểm tra xem vị trí mới có "gần" vị trí cũ không
+            # Nếu quá xa (ví dụ > 50px) thì coi như gesture mới hoàn toàn
+            is_far = self.gesture_entry_y is not None and abs(curr_y - self.gesture_entry_y) > 100
+
+            if self.gesture_entry_y is None or is_far:
+                self.gesture_entry_y = curr_y
+                self.gesture_min_y = curr_y
+                self.gesture_max_y = curr_y
                 self.gesture_down_met = False
                 self.gesture_up_met = False
                 logging.info(f"   [GESTURE START] Initial Y={self.gesture_entry_y}")
             else:
-                logging.info(f"   [GESTURE RESUME] Continuing from Y={self.gesture_entry_y}")
+                logging.info(
+                    f"   [GESTURE RESUME] Continuing from Y={self.gesture_entry_y} (Min={getattr(self, 'gesture_min_y', 0)}, Max={getattr(self, 'gesture_max_y', 0)})")
 
         super().enterEvent(event)
 
     def mouseMoveEvent(self, event):
-        # Chỉ xử lý gesture khi sidebar đang ở chế độ cảm ứng (5px)
+        # Chỉ xử lý gesture khi sidebar đang ở chế độ cảm ứng
         if not self.is_visible and self.gesture_entry_y is not None:
             curr_pos = QCursor.pos()
             curr_y = curr_pos.y()
-            diff = curr_y - self.gesture_entry_y
 
-            # Log mỗi khi có di chuyển để xem có bị mất dấu không
-            logging.info(f"   [GESTURE TRACK] x={curr_pos.x()}, y={curr_y}, diff={diff} | Progress: Down={self.gesture_down_met}, Up={self.gesture_up_met}")
+            # Cập nhật min/max Y đã đi qua kể từ khi Enter
+            if not hasattr(self, 'gesture_min_y'): self.gesture_min_y = curr_y
+            if not hasattr(self, 'gesture_max_y'): self.gesture_max_y = curr_y
 
-            # Check di xuống > 100px
-            if not self.gesture_down_met and diff > 100:
+            self.gesture_min_y = min(self.gesture_min_y, curr_y)
+            self.gesture_max_y = max(self.gesture_max_y, curr_y)
+
+            # Check di xuống: Đã di chuyển xuống ít nhất 100px so với điểm cao nhất
+            if not self.gesture_down_met and (curr_y - self.gesture_min_y) > 100:
                 self.gesture_down_met = True
-                logging.info("   [GESTURE STEP] Step 1/2: Down > 100px OK")
+                logging.info(f"   [GESTURE STEP] Step: Down > 100px OK (Current={curr_y}, Min={self.gesture_min_y})")
 
-            # Check di lên > 100px
-            if not self.gesture_up_met and diff < -100:
+            # Check di lên: Đã di chuyển lên ít nhất 100px so với điểm thấp nhất
+            if not self.gesture_up_met and (self.gesture_max_y - curr_y) > 100:
                 self.gesture_up_met = True
-                logging.info("   [GESTURE STEP] Step 2/2: Up > 100px OK")
+                logging.info(f"   [GESTURE STEP] Step: Up > 100px OK (Current={curr_y}, Max={self.gesture_max_y})")
+
+            # Log tracking (giảm bớt log move để đỡ rác, chỉ log khi có thay đổi trạng thái hoặc mỗi 10px)
+            if not hasattr(self, '_last_log_y') or abs(curr_y - self._last_log_y) > 20:
+                logging.info(
+                    f"   [GESTURE TRACK] y={curr_y} | Span=[{self.gesture_min_y}, {self.gesture_max_y}] | Progress: Down={self.gesture_down_met}, Up={self.gesture_up_met}")
+                self._last_log_y = curr_y
 
             # Nếu thỏa mãn cả 2 thì hiện sidebar
             if self.gesture_down_met and self.gesture_up_met:
