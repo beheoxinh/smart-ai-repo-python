@@ -165,19 +165,52 @@ class Sidebar(QMainWindow):
             self.is_made_sticky = True
 
     def _grab_focus_linux(self):
-        """Force focus on X11 even with BypassWindowManagerHint."""
-        if sys.platform == "linux" and QApplication.platformName() == 'xcb':
-            try:
-                x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
-                display = x11.XOpenDisplay(None)
-                if display:
-                    # XSetInputFocus(display, window, revert_to, time)
-                    # RevertToParent = 1, CurrentTime = 0
-                    x11.XSetInputFocus(display, int(self.winId()), 1, 0)
-                    x11.XSync(display, False)
-                    x11.XCloseDisplay(display)
-            except Exception as e:
-                logging.debug(f"X11 focus grab failed: {e}")
+        """Force focus on X11 even with BypassWindowManagerHint.
+        Corrects SIGSEGV on 64-bit Linux by explicitly defining ctypes argtypes/restype.
+        """
+        if sys.platform != "linux" or QApplication.platformName() != 'xcb':
+            return
+
+        win_id = self.winId()
+        if not win_id or int(win_id) == 0:
+            return
+
+        try:
+            # Cache the library handle and function signatures
+            if not hasattr(self, '_x11_lib'):
+                lib = ctypes.cdll.LoadLibrary("libX11.so.6")
+
+                # Display* XOpenDisplay(char*)
+                lib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+                lib.XOpenDisplay.restype = ctypes.c_void_p
+
+                # int XSetInputFocus(Display*, Window, int, Time)
+                # Window and Time are 64-bit unsigned longs on x86_64
+                lib.XSetInputFocus.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+                lib.XSetInputFocus.restype = ctypes.c_int
+
+                # int XSync(Display*, Bool)
+                lib.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+                lib.XSync.restype = ctypes.c_int
+
+                # int XCloseDisplay(Display*)
+                lib.XCloseDisplay.argtypes = [ctypes.c_void_p]
+                lib.XCloseDisplay.restype = ctypes.c_int
+
+                self._x11_lib = lib
+
+            display = self._x11_lib.XOpenDisplay(None)
+            if not display:
+                return
+
+            # RevertToParent = 1, CurrentTime = 0
+            # Explicitly cast winId to int for c_ulong
+            self._x11_lib.XSetInputFocus(display, int(win_id), 1, 0)
+            self._x11_lib.XSync(display, 0)
+            self._x11_lib.XCloseDisplay(display)
+
+        except Exception as e:
+            logging.debug(f"X11 focus grab failed: {e}")
 
     def showEvent(self, event):
         super().showEvent(event)
