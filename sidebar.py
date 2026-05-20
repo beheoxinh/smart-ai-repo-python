@@ -297,10 +297,10 @@ class Sidebar(QMainWindow):
             if not self.gesture_up_met and (self.gesture_max_y - curr_y) > 200:
                 self.gesture_up_met = True
 
-            # Kiểm tra thời gian: Nếu quá 1s kể từ lúc bắt đầu thì reset
+            # Kiểm tra thời gian: Nếu quá 0.7s kể từ lúc bắt đầu thì reset
             gesture_duration = time.time() - self.gesture_start_time
-            if gesture_duration > 1.0:
-                # Reset để bắt đầu lại chu kỳ 1s mới nếu vẫn đang ở trong vùng cảm ứng
+            if gesture_duration > 0.7:
+                # Reset để bắt đầu lại chu kỳ 0.7s mới nếu vẫn đang ở trong vùng cảm ứng
                 self.gesture_start_time = time.time()
                 self.gesture_min_y = curr_y
                 self.gesture_max_y = curr_y
