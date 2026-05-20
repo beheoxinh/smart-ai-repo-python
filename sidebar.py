@@ -346,8 +346,8 @@ class Sidebar(QMainWindow):
             self.update_position()
 
             # Sau khi đã ở đúng vị trí, mới hiện nguyên hình
-            # Sử dụng delay cực ngắn để đảm bảo compositor đã kịp cập nhật vị trí
-            QTimer.singleShot(30, lambda: self.setWindowOpacity(1.0))
+            # Tăng delay lên một chút để chắc chắn compositor đã ổn định vị trí mới
+            QTimer.singleShot(100, lambda: self.setWindowOpacity(1.0))
 
             self.setStyleSheet("QMainWindow { background-color: #33322F; }")
             if hasattr(self, 'centralWidget') and self.centralWidget():
@@ -462,14 +462,8 @@ class Sidebar(QMainWindow):
                 f"MOVING WINDOW to: Screen={self.active_screen.name()} (Global X: {screen_geometry.x()}) | Target Rect: x={new_x}, y={new_y}, w={new_w}, h={new_h} | Platform: {platform} | WaylandSession: {is_wayland_session}")
 
             # Trên XWayland, di chuyển cửa sổ xuyên màn hình đôi khi bị "clamped".
-            # Ta sẽ thử combo setGeometry + move để ép nó.
-            if is_wayland_session or platform == "wayland":
-                self.setGeometry(new_x, new_y, new_w, new_h)
-                # Gọi thêm move để chắc chắn trên XWayland
-                QTimer.singleShot(50, lambda: self.move(new_x, new_y))
-            else:
-                self.move(new_x, new_y)
-                self.resize(new_w, new_h)
+            # Ta sẽ sử dụng setGeometry để đặt cả vị trí và kích thước cùng lúc.
+            self.setGeometry(new_x, new_y, new_w, new_h)
 
             # Log kết quả thực tế sau khi đặt
             actual_geo = self.geometry()
