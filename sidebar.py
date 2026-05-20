@@ -396,22 +396,34 @@ class Sidebar(QMainWindow):
                 logging.warning("update_position: No active screen found.")
                 return
 
+            # QUAN TRỌNG: Cần chuyển window sang đúng màn hình target trước khi set geometry
+            # Điều này giúp Qt tính toán hệ tọa độ chính xác trên một số hệ điều hành
+            if self.windowHandle():
+                self.windowHandle().setScreen(self.active_screen)
+
             screen_geometry = self.active_screen.geometry()
+
+            # Sử dụng chiều rộng mục tiêu: 
+            # Nếu đang hiện thì là last_width, nếu đang ẩn thì là 5px
+            target_width = self.width()
+            if not self.is_visible:
+                target_width = 5
 
             # Đảm bảo chiều rộng sidebar không vượt quá 90% chiều rộng màn hình hiện tại
             max_allowed_width = int(screen_geometry.width() * 0.9)
-            if self.width() > max_allowed_width:
-                logging.info(f"Clamping width from {self.width()} to {max_allowed_width}")
-                self.setFixedWidth(max_allowed_width)
+            if target_width > max_allowed_width:
+                logging.info(f"Clamping width from {target_width} to {max_allowed_width}")
+                target_width = max_allowed_width
 
             bottom_margin = 64
-            new_x = screen_geometry.x() + screen_geometry.width() - self.width()
+            new_x = screen_geometry.x() + screen_geometry.width() - target_width
             new_y = screen_geometry.y()
-            new_w = self.width()
+            new_w = target_width
             new_h = screen_geometry.height() - bottom_margin
 
-            logging.info(f"Moving sidebar to: Screen={self.active_screen.name()}, Geometry: x={new_x}, y={new_y}, w={new_w}, h={new_h}")
+            logging.info(f"MOVING WINDOW to: Screen={self.active_screen.name()} | Target Rect: x={new_x}, y={new_y}, w={new_w}, h={new_h} | IsVisible: {self.is_visible}")
 
+            # Sử dụng setGeometry để thay đổi cả vị trí và kích thước cùng lúc
             self.setGeometry(new_x, new_y, new_w, new_h)
 
         except Exception as e:
