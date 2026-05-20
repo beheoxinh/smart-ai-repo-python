@@ -27,17 +27,19 @@ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
 )
 
 import logging
-from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtGui import QAction, QIcon, QActionGroup
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from utils import AppPaths
 from sidebar import Sidebar
 import traceback
 import faulthandler
+
 faulthandler.enable()
 
 # Cấu hình logging
 log_format = '%(asctime)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=log_format, stream=sys.stdout)
+
 
 # --- Centralized Error Handling ---
 def show_critical_error(message):
@@ -52,10 +54,11 @@ def show_critical_error(message):
     msg_box.setWindowTitle("Error")
     msg_box.exec()
 
+
 def main():
     try:
         app = QApplication(sys.argv)
-        
+
         # Sửa lỗi: Bỏ ".desktop" ở cuối tên file
         app.setDesktopFileName("smart-ai")
 
@@ -79,6 +82,39 @@ def main():
             logging.error(error_info)
             raise RuntimeError(error_info) from e
 
+        # --- Screen Selection Menu ---
+        screen_menu = tray_menu.addMenu("Display Screen")
+        screen_group = QActionGroup(screen_menu)
+
+        def refresh_screen_menu():
+            screen_menu.clear()
+
+            # Auto (Rightmost) option
+            auto_action = QAction("Auto (Rightmost)", screen_menu, checkable=True)
+            auto_action.setChecked(sidebar.manual_screen_index == -1)
+            auto_action.triggered.connect(lambda: sidebar.set_manual_screen(-1))
+            screen_menu.addAction(auto_action)
+            screen_group.addAction(auto_action)
+
+            screen_menu.addSeparator()
+
+            # Individual screens
+            screens = QApplication.screens()
+            for i, screen in enumerate(screens):
+                screen_name = f"Screen {i + 1}: {screen.name()} ({screen.geometry().width()}x{screen.geometry().height()})"
+                action = QAction(screen_name, screen_menu, checkable=True)
+                action.setChecked(sidebar.manual_screen_index == i)
+                # Sử dụng lambda với capture giá trị hiện tại của i
+                action.triggered.connect(lambda checked, idx=i: sidebar.set_manual_screen(idx))
+                screen_menu.addAction(action)
+                screen_group.addAction(action)
+
+        refresh_screen_menu()
+
+        # Cập nhật menu khi cắm/rút màn hình
+        app.screenAdded.connect(lambda _: refresh_screen_menu())
+        app.screenRemoved.connect(lambda _: refresh_screen_menu())
+
         show_action = QAction("Show")
         show_action.triggered.connect(sidebar.show_sidebar)
         tray_menu.addAction(show_action)
@@ -97,6 +133,7 @@ def main():
         logging.critical(error_message, exc_info=True)
         show_critical_error(error_message)
         return 1
+
 
 if __name__ == '__main__':
     sys.exit(main())

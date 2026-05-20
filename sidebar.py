@@ -36,6 +36,7 @@ class Sidebar(QMainWindow):
         self.popup_windows = []
         self.last_width = None
         self.is_made_sticky = False  # Flag for workspace stickiness
+        self.manual_screen_index = -1  # -1 means auto (rightmost)
         self.init_ui()
         self.setup_shortcut()
 
@@ -88,7 +89,7 @@ class Sidebar(QMainWindow):
             if primary_screen:
                 self.last_width = self.calculate_width(primary_screen.geometry().width())
 
-            self.active_screen = self.get_rightmost_screen()
+            self.active_screen = self.get_target_screen()
 
             # Kết nối các tín hiệu khi thay đổi cấu hình màn hình
             app_instance = QApplication.instance()
@@ -152,6 +153,18 @@ class Sidebar(QMainWindow):
         self.is_webview_menu_open = is_open
         logging.info(f"Webview context menu state changed: {'Open' if is_open else 'Closed'}")
 
+    def get_target_screen(self):
+        screens = QApplication.screens()
+        if 0 <= self.manual_screen_index < len(screens):
+            return screens[self.manual_screen_index]
+        return self.get_rightmost_screen()
+
+    def set_manual_screen(self, index):
+        self.manual_screen_index = index
+        self.active_screen = self.get_target_screen()
+        self.update_position()
+        logging.info(f"Manual screen set to index: {index}")
+
     def get_rightmost_screen(self):
         screens = QApplication.screens()
         if not screens:
@@ -165,9 +178,8 @@ class Sidebar(QMainWindow):
         logging.info(f"Mouse EnterEvent tại: x={cursor_pos.x()}, y={cursor_pos.y()}")
 
         if not self.is_visible and not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
-            # Luôn kiểm tra màn hình ngoài cùng bên phải thay vì màn hình hiện tại của chuột
-            # để tránh việc sidebar hiện ở giữa 2 màn hình
-            screen = self.get_rightmost_screen()
+            # Sử dụng màn hình mục tiêu (auto hoặc manual)
+            screen = self.get_target_screen()
             if screen and self.is_foreground_fullscreen(screen):
                 return
 
@@ -351,8 +363,8 @@ class Sidebar(QMainWindow):
 
     def update_position(self, _=None):
         try:
-            # Luôn định vị sidebar ở màn hình ngoài cùng bên phải
-            self.active_screen = self.get_rightmost_screen()
+            # Sử dụng màn hình mục tiêu (auto hoặc manual)
+            self.active_screen = self.get_target_screen()
 
             screen_geometry = self.active_screen.geometry()
             bottom_margin = 64
@@ -369,7 +381,7 @@ class Sidebar(QMainWindow):
     def update_width_and_x_position(self):
         try:
             if not self.active_screen:
-                self.active_screen = self.get_rightmost_screen()
+                self.active_screen = self.get_target_screen()
 
             screen_geometry = self.active_screen.geometry()
 
