@@ -74,7 +74,7 @@ class Sidebar(QMainWindow):
 
     def setup_stability_watchdog(self):
         self.watchdog_timer.timeout.connect(self._stability_check)
-        self.watchdog_timer.start(1000)  # Check every 1s for better responsiveness
+        self.watchdog_timer.start(100)  # High-frequency watchdog: 100ms (0.1s)
 
     def setup_fullscreen_watchdog(self):
         self.fullscreen_timer.timeout.connect(self._update_fullscreen_state)
@@ -110,7 +110,9 @@ class Sidebar(QMainWindow):
         process.start("bash", ["-c", cmd])
 
     def _stability_check(self):
-        """Cleanup stuck states if sidebar is visible but mouse is away."""
+        """Cleanup stuck states if sidebar is visible but mouse is away.
+        Focus Watchdog part runs every 100ms for aggressive focus management.
+        """
         if not self.is_visible:
             return
 
@@ -131,6 +133,7 @@ class Sidebar(QMainWindow):
         if is_mouse_inside:
             self.last_mouse_in_time = now
             # Focus Watchdog: if mouse is inside and visible but window doesn't have focus, grab it
+            # Aggressively check every 100ms
             if not self.isActiveWindow():
                 self._grab_focus_linux()
             return
@@ -146,8 +149,8 @@ class Sidebar(QMainWindow):
             self.hide_sidebar(reason="watchdog_force")
             return
 
-        # Normal hide if away for > 5s and no menus/popups are open
-        if time_away > 5.0 and not (self.has_active_popup or self.is_nav_menu_open or self.is_webview_menu_open):
+        # Normal hide if away for > 2.0s and no menus/popups are open
+        if time_away > 2.0 and not (self.has_active_popup or self.is_nav_menu_open or self.is_webview_menu_open):
             logging.info(f"Watchdog: Hiding sidebar after {time_away:.1f}s away")
             self.hide_sidebar(reason="watchdog")
 
@@ -270,8 +273,8 @@ class Sidebar(QMainWindow):
             return
 
         now = time.time()
-        # Cooldown: Don't grab focus more than once every 500ms unless explicitly requested
-        if not forced and (now - self._last_focus_grab_time) < 0.5:
+        # Cooldown: Don't grab focus more than once every 100ms unless explicitly requested
+        if not forced and (now - self._last_focus_grab_time) < 0.1:
             return
         self._last_focus_grab_time = now
 
@@ -304,6 +307,11 @@ class Sidebar(QMainWindow):
 
             if not self._x11_display:
                 return
+
+            # Ensure Qt knows it should have focus
+            self.raise_()
+            self.activateWindow()
+            self.setFocus()
 
             # RevertToParent = 1, CurrentTime = 0
             self._x11_lib.XSetInputFocus(self._x11_display, int(win_id), 1, 0)
@@ -576,7 +584,9 @@ class Sidebar(QMainWindow):
             if hasattr(self, 'content_widget') and self.content_widget.web_view:
                 self.content_widget.web_view.setFocus()
 
-            # Delay focus grab slightly to let the window realize it exists
+            # Multiple focus grabs to ensure focus is acquired
+            QTimer.singleShot(0, lambda: self._grab_focus_linux(forced=True))
+            QTimer.singleShot(50, lambda: self._grab_focus_linux(forced=True))
             QTimer.singleShot(200, self._grab_focus_linux)
             QTimer.singleShot(1000, lambda: self._grab_focus_linux(forced=True))
 

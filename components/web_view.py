@@ -2,12 +2,11 @@
 import ctypes
 import os
 import sys
-import traceback
 from urllib.parse import urlparse
 from uuid import UUID
 
 from PyQt6.QtCore import QUrl, Qt, pyqtSignal, QStandardPaths, QTimer
-from PyQt6.QtGui import QGuiApplication, QDesktopServices, QAction, QCursor
+from PyQt6.QtGui import QGuiApplication, QCursor
 from PyQt6.QtWebEngineCore import (
     QWebEnginePage,
     QWebEngineProfile,
@@ -16,7 +15,7 @@ from PyQt6.QtWebEngineCore import (
     QWebEngineUrlRequestInfo,
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QMenu, QDialog, QVBoxLayout
+from PyQt6.QtWidgets import QDialog, QVBoxLayout
 
 from utils import AppPaths
 
