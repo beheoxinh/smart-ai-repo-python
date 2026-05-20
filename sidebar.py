@@ -89,6 +89,7 @@ class Sidebar(QMainWindow):
             self.setMouseTracking(True)
 
             container = QWidget()
+            container.setMouseTracking(True)  # QUAN TRỌNG: Phải bật ở đây thì QMainWindow mới nhận được move event
             container_layout = QHBoxLayout(container)
             container_layout.setContentsMargins(0, 0, 0, 0)
             container_layout.setSpacing(0)
@@ -514,7 +515,7 @@ class Sidebar(QMainWindow):
             if self.is_visible:
                 target_width = self.last_width or self.calculate_width(screen_geometry.width())
             else:
-                target_width = 15  # Tăng từ 5 lên 15 để gesture dễ thực hiện hơn
+                target_width = 20  # Tăng thêm 5px nữa (tổng 20px) cho chắc cú
 
             # Đảm bảo chiều rộng sidebar không vượt quá 90% chiều rộng màn hình hiện tại
             max_allowed_width = int(screen_geometry.width() * 0.9)
