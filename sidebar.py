@@ -455,7 +455,7 @@ class Sidebar(QMainWindow):
                 logging.info(f"Clamping width from {target_width} to {max_allowed_width}")
                 target_width = max_allowed_width
 
-            bottom_margin = 64
+            bottom_margin = 0
             # Tọa độ X tuyệt đối trên toàn bộ không gian desktop
             new_x = screen_geometry.x() + screen_geometry.width() - target_width
             new_y = screen_geometry.y()
