@@ -291,11 +291,13 @@ class Sidebar(QMainWindow):
         try:
             if self.is_visible: return
 
+            # Luôn cập nhật màn hình mục tiêu trước khi hiển thị
+            self.active_screen = self.get_target_screen()
+            if not self.active_screen:
+                self.active_screen = QApplication.primaryScreen()
+
             # Reset màu nền bình thường khi hiện sidebar
             self.setStyleSheet("QMainWindow { background-color: #33322F; }")
-
-            if not self.active_screen:
-                self.active_screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
 
             target_width = self.last_width or self.calculate_width(self.active_screen.geometry().width())
 
@@ -363,19 +365,32 @@ class Sidebar(QMainWindow):
 
     def update_position(self, _=None):
         try:
-            # Sử dụng màn hình mục tiêu (auto hoặc manual)
+            # Luôn cập nhật màn hình mục tiêu trước khi tính toán tọa độ
             self.active_screen = self.get_target_screen()
+            if not self.active_screen:
+                logging.warning("update_position: No active screen found.")
+                return
 
             screen_geometry = self.active_screen.geometry()
-            bottom_margin = 64
 
-            self.setGeometry(
-                screen_geometry.x() + screen_geometry.width() - self.width(),
-                screen_geometry.y(),
-                self.width(),
-                screen_geometry.height() - bottom_margin
-            )
+            # Đảm bảo chiều rộng sidebar không vượt quá 90% chiều rộng màn hình hiện tại
+            max_allowed_width = int(screen_geometry.width() * 0.9)
+            if self.width() > max_allowed_width:
+                logging.info(f"Clamping width from {self.width()} to {max_allowed_width}")
+                self.setFixedWidth(max_allowed_width)
+
+            bottom_margin = 64
+            new_x = screen_geometry.x() + screen_geometry.width() - self.width()
+            new_y = screen_geometry.y()
+            new_w = self.width()
+            new_h = screen_geometry.height() - bottom_margin
+
+            logging.info(f"Moving sidebar to: Screen={self.active_screen.name()}, Geometry: x={new_x}, y={new_y}, w={new_w}, h={new_h}")
+
+            self.setGeometry(new_x, new_y, new_w, new_h)
+
         except Exception as e:
+            logging.error(f"Error in update_position: {e}", exc_info=True)
             alert_popup(self, "Update Position Error", f"Error updating window position: {e}")
 
     def update_width_and_x_position(self):

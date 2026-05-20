@@ -84,10 +84,10 @@ def main():
 
         # --- Screen Selection Menu ---
         screen_menu = tray_menu.addMenu("Display Screen")
-        screen_group = QActionGroup(screen_menu)
 
         def refresh_screen_menu():
             screen_menu.clear()
+            screen_group = QActionGroup(screen_menu)
 
             # Auto (Rightmost) option
             auto_action = QAction("Auto (Rightmost)", screen_menu, checkable=True)
