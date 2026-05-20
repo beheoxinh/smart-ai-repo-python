@@ -1,5 +1,6 @@
 # File: components/sidebar.py (Cross-platform version)
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -425,18 +426,22 @@ class Sidebar(QMainWindow):
 
             screen_geometry = self.active_screen.geometry()
             platform = QApplication.platformName()
+            is_wayland_session = os.environ.get("XDG_SESSION_TYPE") == "wayland"
 
             # QUAN TRỌNG: Kiểm tra xem window đã ở đúng screen chưa
             if self.windowHandle() and self.windowHandle().screen() != self.active_screen:
                 logging.info(f"Switching window handle from {self.windowHandle().screen().name()} to {self.active_screen.name()}")
 
-                # Trên Wayland, thay đổi Screen thường yêu cầu hide/show để compositor nhận diện lại vị trí
-                if platform == "wayland":
+                # Nếu là Wayland (kể cả khi đang chạy qua xcb/XWayland), 
+                # việc chuyển screen thường cần hide/show để compositor nhận diện lại
+                if is_wayland_session or platform == "wayland":
                     self.hide()
                     self.windowHandle().setScreen(self.active_screen)
-                    # Delay một chút trước khi hiện lại để compositor kịp update
-                    QTimer.singleShot(100, self.show)
-                    logging.info("Wayland: Hide/Show triggered for screen switch")
+                    # Ép window handle cập nhật
+                    self.windowHandle().setScreen(self.active_screen)
+                    # Delay một chút trước khi hiện lại
+                    QTimer.singleShot(150, self.show)
+                    logging.info(f"Wayland/XWayland session: Hide/Show triggered for screen switch to {self.active_screen.name()}")
                 else:
                     self.windowHandle().setScreen(self.active_screen)
 
@@ -460,12 +465,14 @@ class Sidebar(QMainWindow):
             new_h = screen_geometry.height() - bottom_margin
 
             logging.info(
-                f"MOVING WINDOW to: Screen={self.active_screen.name()} (Global X: {screen_geometry.x()}) | Target Rect: x={new_x}, y={new_y}, w={new_w}, h={new_h} | Platform: {platform}")
+                f"MOVING WINDOW to: Screen={self.active_screen.name()} (Global X: {screen_geometry.x()}) | Target Rect: x={new_x}, y={new_y}, w={new_w}, h={new_h} | Platform: {platform} | WaylandSession: {is_wayland_session}")
 
-            # Thực hiện di chuyển
-            if platform == "wayland":
-                # Wayland không thích move() tuyệt đối, ta dùng setGeometry như một lời gợi ý mạnh mẽ
+            # Trên XWayland, di chuyển cửa sổ xuyên màn hình đôi khi bị "clamped".
+            # Ta sẽ thử combo setGeometry + move để ép nó.
+            if is_wayland_session or platform == "wayland":
                 self.setGeometry(new_x, new_y, new_w, new_h)
+                # Gọi thêm move để chắc chắn trên XWayland
+                QTimer.singleShot(50, lambda: self.move(new_x, new_y))
             else:
                 self.move(new_x, new_y)
                 self.resize(new_w, new_h)
@@ -474,7 +481,7 @@ class Sidebar(QMainWindow):
             actual_geo = self.geometry()
             logging.info(f"ACTUAL GEOMETRY after move: x={actual_geo.x()}, y={actual_geo.y()}, w={actual_geo.width()}, h={actual_geo.height()}")
 
-            if actual_geo.x() != new_x and platform != "wayland":
+            if actual_geo.x() != new_x and not is_wayland_session:
                 logging.warning(f"POSITION MISMATCH! Expected x={new_x}, got x={actual_geo.x()}. OS or Window Manager might be clamping the window.")
 
         except Exception as e:
