@@ -403,11 +403,21 @@ class Sidebar(QMainWindow):
                 return
 
             screen_geometry = self.active_screen.geometry()
+            platform = QApplication.platformName()
 
             # QUAN TRỌNG: Kiểm tra xem window đã ở đúng screen chưa
             if self.windowHandle() and self.windowHandle().screen() != self.active_screen:
                 logging.info(f"Switching window handle from {self.windowHandle().screen().name()} to {self.active_screen.name()}")
-                self.windowHandle().setScreen(self.active_screen)
+
+                # Trên Wayland, thay đổi Screen thường yêu cầu hide/show để compositor nhận diện lại vị trí
+                if platform == "wayland":
+                    self.hide()
+                    self.windowHandle().setScreen(self.active_screen)
+                    # Delay một chút trước khi hiện lại để compositor kịp update
+                    QTimer.singleShot(100, self.show)
+                    logging.info("Wayland: Hide/Show triggered for screen switch")
+                else:
+                    self.windowHandle().setScreen(self.active_screen)
 
             # Sử dụng chiều rộng mục tiêu: 
             # Nếu đang hiện thì là last_width, nếu đang ẩn thì là 5px
@@ -429,18 +439,21 @@ class Sidebar(QMainWindow):
             new_h = screen_geometry.height() - bottom_margin
 
             logging.info(
-                f"MOVING WINDOW to: Screen={self.active_screen.name()} (Global X: {screen_geometry.x()}) | Target Rect: x={new_x}, y={new_y}, w={new_w}, h={new_h} | IsVisible: {self.is_visible}")
+                f"MOVING WINDOW to: Screen={self.active_screen.name()} (Global X: {screen_geometry.x()}) | Target Rect: x={new_x}, y={new_y}, w={new_w}, h={new_h} | Platform: {platform}")
 
-            # Trên Linux X11/XCB, đôi khi setGeometry không đủ để nhảy màn hình nếu window đang show.
-            # Ta sẽ thử combo: move + resize riêng biệt để ép hệ điều hành cập nhật.
-            self.move(new_x, new_y)
-            self.resize(new_w, new_h)
+            # Thực hiện di chuyển
+            if platform == "wayland":
+                # Wayland không thích move() tuyệt đối, ta dùng setGeometry như một lời gợi ý mạnh mẽ
+                self.setGeometry(new_x, new_y, new_w, new_h)
+            else:
+                self.move(new_x, new_y)
+                self.resize(new_w, new_h)
 
             # Log kết quả thực tế sau khi đặt
             actual_geo = self.geometry()
             logging.info(f"ACTUAL GEOMETRY after move: x={actual_geo.x()}, y={actual_geo.y()}, w={actual_geo.width()}, h={actual_geo.height()}")
 
-            if actual_geo.x() != new_x:
+            if actual_geo.x() != new_x and platform != "wayland":
                 logging.warning(f"POSITION MISMATCH! Expected x={new_x}, got x={actual_geo.x()}. OS or Window Manager might be clamping the window.")
 
         except Exception as e:
