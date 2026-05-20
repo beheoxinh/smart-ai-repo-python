@@ -7,7 +7,7 @@ class ResizeHandle(QFrame):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
-        self.setFixedWidth(5)
+        self.setFixedWidth(10)
         self.setCursor(Qt.CursorShape.SizeHorCursor)
         self.is_resizing = False
         self.setStyleSheet("""
@@ -15,7 +15,8 @@ class ResizeHandle(QFrame):
                 background-color: transparent;
             }
             QFrame:hover {
-                background-color: rgba(255, 255, 255, 0.1);
+                background-color: rgba(255, 255, 255, 0.15);
+                border-left: 1px solid rgba(255, 255, 255, 0.3);
             }
         """)
 

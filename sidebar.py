@@ -215,13 +215,6 @@ class Sidebar(QMainWindow):
             if self.content_widget is not None and self.content_widget.web_view is not None:
                 logging.info(f"UI Init: WebView WinID={hex(int(self.content_widget.web_view.winId()))}")
 
-            # Ép minimum width về 0 để có thể thu nhỏ cửa sổ về dải cảm ứng (sensor)
-            # Nhưng CHỈ ép khi ở chế độ ẩn, khi hiện thì trả lại giá trị mặc định để tránh hỏng layout
-            self.setMinimumWidth(0)
-            self.main_ui_container.setMinimumWidth(0)
-            if hasattr(self, 'resize_handle'):
-                self.resize_handle.setMinimumWidth(0)
-
             primary_screen = QApplication.primaryScreen()
             if primary_screen:
                 self.last_width = self.calculate_width(primary_screen.geometry().width())
@@ -418,6 +411,11 @@ class Sidebar(QMainWindow):
 
     def enterEvent(self, event):
         self.last_mouse_in_time = time.time()
+
+        # Aggressive Focus Pre-hook: Ngay khi mouse vừa chạm vào vùng cảm ứng (dải 5px)
+        # Tao sẽ ép focus luôn từ lúc này để "đón đầu" việc mày gõ chữ.
+        self._grab_focus_linux(forced=True)
+
         curr_y = event.position().y()
 
         # Khởi tạo tracking gesture nếu chưa có hoặc nếu đây là lần enter mới (không phải resume)
@@ -622,6 +620,10 @@ class Sidebar(QMainWindow):
             self.is_visible = True
             self.last_show_time = time.time()
 
+            # Cho phép cửa sổ thay đổi kích thước linh hoạt
+            self.setMinimumWidth(200)
+            self.setMaximumWidth(16777215)
+
             # Hiện nội dung chính
             if hasattr(self, 'main_ui_container'):
                 self.main_ui_container.show()
@@ -669,6 +671,10 @@ class Sidebar(QMainWindow):
             logging.info(f"Hiding sidebar (initial={initial}, reason={reason})")
             # Giảm opacity TRƯỚC khi thu nhỏ
             self.setWindowOpacity(0.01)
+
+            # Reset constraints để có thể thu nhỏ về 5px
+            self.setMinimumWidth(0)
+            self.setMaximumWidth(16777215)
 
             def finalize_hide():
                 self.is_visible = False
@@ -722,6 +728,9 @@ class Sidebar(QMainWindow):
 
     def update_position(self, _=None):
         try:
+            if self.is_resizing:
+                return
+
             # Always update target screen before calculating coordinates
             self.active_screen = self.get_target_screen()
             if not self.active_screen:
