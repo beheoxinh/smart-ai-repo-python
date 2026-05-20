@@ -42,8 +42,11 @@ class Sidebar(QMainWindow):
 
         # Gesture Trigger State
         self.gesture_entry_y = None
+        self.gesture_min_y = None
+        self.gesture_max_y = None
         self.gesture_down_met = False
         self.gesture_up_met = False
+        self._last_log_y = 0
 
         self.init_ui()
         self.setup_shortcut()
@@ -117,9 +120,11 @@ class Sidebar(QMainWindow):
             self.content_widget.nav_bar.menu_state_changed.connect(self.on_nav_menu_state_changed)
             self.content_widget.context_menu_state_changed.connect(self.on_webview_menu_state_changed)
 
+            container_layout.addWidget(main_widget)
             self.setCentralWidget(container)
 
             # Ép minimum width về 0 để có thể thu nhỏ cửa sổ về dải cảm ứng (sensor)
+            # Nhưng CHỈ ép khi ở chế độ ẩn, khi hiện thì trả lại giá trị mặc định để tránh hỏng layout
             self.setMinimumWidth(0)
             self.main_ui_container.setMinimumWidth(0)
             if hasattr(self, 'resize_handle'):
@@ -407,30 +412,18 @@ class Sidebar(QMainWindow):
         try:
             logging.info(f"==> MẮT THẦN: [SHOW] Starting show_sidebar. is_visible was {self.is_visible}")
             if self.is_visible:
-                logging.info("   [SHOW CANCELLED] Already visible.")
                 return
 
-            self.active_screen = self.get_target_screen()
-            if not self.active_screen:
-                self.active_screen = QApplication.primaryScreen()
-
-            # Hiện resize handle khi mở sidebar
-            if hasattr(self, 'resize_handle'):
-                self.resize_handle.show()
+            self.is_visible = True
 
             # Hiện nội dung chính
             if hasattr(self, 'main_ui_container'):
                 self.main_ui_container.show()
+                self.main_ui_container.setMinimumWidth(200)  # Đảm bảo không bị bóp nghẹt
 
-            # Đảm bảo window handle tồn tại và đúng screen
-            self.winId()
-            if self.windowHandle():
-                self.windowHandle().setScreen(self.active_screen)
+            if hasattr(self, 'resize_handle'):
+                self.resize_handle.show()
 
-            # Đánh dấu trạng thái hiển thị nhưng CHƯA tăng opacity ngay
-            self.is_visible = True
-
-            # Cập nhật vị trí và kích thước ngay lập tức (vẫn đang opacity 0.01)
             self.update_position()
 
             # Sau khi đã ở đúng vị trí, mới hiện nguyên hình
@@ -439,56 +432,40 @@ class Sidebar(QMainWindow):
                 self.setWindowOpacity(1.0)
 
             QTimer.singleShot(100, restore_opacity)
-
             self.setStyleSheet("QMainWindow { background-color: #33322F; }")
-            if hasattr(self, 'centralWidget') and self.centralWidget():
-                self.centralWidget().setStyleSheet("background-color: transparent;")
-
             self.raise_()
             self.activateWindow()
 
         except Exception as e:
             logging.error(f"Error in show_sidebar: {e}", exc_info=True)
-            alert_popup(self, "Show Sidebar Error", f"Error showing sidebar: {e}")
 
     def hide_sidebar(self, initial=False):
         try:
-            logging.info(f"==> MẮT THẦN: [HIDE] Starting hide_sidebar(initial={initial}). is_visible was {self.is_visible}")
             if not initial and (self.is_resizing or not self.is_visible):
-                logging.info(f"   [HIDE CANCELLED] resizing={self.is_resizing}, visible={self.is_visible}")
                 return
 
-            # Giảm opacity TRƯỚC khi thu nhỏ để tránh thấy window bị co lại
+            # Giảm opacity TRƯỚC khi thu nhỏ
             self.setWindowOpacity(0.01)
 
-            # Đợi một chút cho opacity mờ hẳn rồi mới thu nhỏ về dải cảm ứng
             def finalize_hide():
-                logging.info("   [HIDE FINALIZING] Moving to sensor mode...")
                 self.is_visible = False
-
-                # Ẩn resize handle khi thu nhỏ về dải cảm ứng
+                if hasattr(self, 'main_ui_container'):
+                    self.main_ui_container.hide()
+                    self.main_ui_container.setMinimumWidth(0)
                 if hasattr(self, 'resize_handle'):
                     self.resize_handle.hide()
 
-                # Ẩn nội dung chính để tránh chặn sự kiện chuột (QUAN TRỌNG)
-                if hasattr(self, 'main_ui_container'):
-                    self.main_ui_container.hide()
-
-                transparent_style = "background-color: transparent;"
-                self.setStyleSheet(f"QMainWindow {{ {transparent_style} }}")
-                if hasattr(self, 'centralWidget') and self.centralWidget():
-                    self.centralWidget().setStyleSheet(transparent_style)
+                self.setStyleSheet("QMainWindow { background-color: transparent; }")
                 self.update_position()
 
             if not initial:
-                QTimer.singleShot(20, finalize_hide)
+                QTimer.singleShot(50, finalize_hide)
             else:
                 finalize_hide()
                 self.show()
 
         except Exception as e:
             logging.error(f"Error in hide_sidebar: {e}", exc_info=True)
-            alert_popup(self, "Hide Sidebar Error", f"Error hiding sidebar: {e}")
 
     def closeEvent(self, event):
         try:
@@ -522,63 +499,32 @@ class Sidebar(QMainWindow):
             # Luôn cập nhật màn hình mục tiêu trước khi tính toán tọa độ
             self.active_screen = self.get_target_screen()
             if not self.active_screen:
-                logging.warning("update_position: No active screen found.")
                 return
 
             screen_geometry = self.active_screen.geometry()
-            dpr = self.devicePixelRatioF()
-            logging.info(f"Device Pixel Ratio (DPR): {dpr}")
-            platform = QApplication.platformName()
-            is_wayland_session = os.environ.get("XDG_SESSION_TYPE") == "wayland"
-
-            # QUAN TRỌNG: Trên Wayland/XWayland, windowHandle().screen() cập nhật rất chậm
-            # dẫn đến loop vô tận. Ta sẽ dựa vào tọa độ thực tế để quyết định có cần ép screen không.
-            actual_x = self.x()
-            screen_geo = self.active_screen.geometry()
-            is_outside_target = (actual_x < screen_geo.x() or actual_x > (screen_geo.x() + screen_geo.width()))
-
-            if self.windowHandle() and is_outside_target:
-                logging.info(
-                    f"SCREEN MISMATCH: Actual X {actual_x} is outside {self.active_screen.name()} ({screen_geo.x()} to {screen_geo.x() + screen_geo.width()}). Forcing...")
-                # Ép screen và tọa độ cùng lúc để phá clamping
-                self.windowHandle().setScreen(self.active_screen)
 
             # Xác định chiều rộng mục tiêu
             if self.is_visible:
                 target_width = self.last_width or self.calculate_width(screen_geometry.width())
             else:
-                target_width = 20  # Tăng thêm 5px nữa (tổng 20px) cho chắc cú
+                target_width = 20
 
-            # Đảm bảo chiều rộng sidebar không vượt quá 90% chiều rộng màn hình hiện tại
-            max_allowed_width = int(screen_geometry.width() * 0.9)
-            if target_width > max_allowed_width:
-                logging.info(f"Clamping width from {target_width} to {max_allowed_width}")
-                target_width = max_allowed_width
-
-            bottom_margin = 0
-            # Tọa độ X tuyệt đối trên toàn bộ không gian desktop
+            # Tọa độ X tuyệt đối
             new_x = screen_geometry.x() + screen_geometry.width() - target_width
             new_y = screen_geometry.y()
             new_w = target_width
-            new_h = screen_geometry.height() - bottom_margin
+            new_h = screen_geometry.height()
 
-            logging.info(
-                f"==> MẮT THẦN: [MOVE] Target Rect: x={new_x}, y={new_y}, w={new_w}, h={new_h} | Visible State={self.is_visible}")
+            logging.info(f"==> MẮT THẦN: [MOVE] Target: x={new_x}, y={new_y}, w={new_w}, h={new_h} | Visible={self.is_visible}")
 
-            # Trên XWayland, di chuyển cửa sổ xuyên màn hình đôi khi bị "clamped".
-            # Ta sẽ sử dụng setGeometry để đặt cả vị trí và kích thước cùng lúc.
+            # Ép window handle sang đúng screen nếu cần (chỉ làm khi thực sự lệch màn hình)
+            if self.windowHandle() and self.windowHandle().screen() != self.active_screen:
+                self.windowHandle().setScreen(self.active_screen)
+
             self.setGeometry(new_x, new_y, new_w, new_h)
-
-            # Log kết quả thực tế sau khi đặt
-            actual_geo = self.geometry()
-            logging.info(f"==> MẮT THẦN: [MOVE RESULT] Actual Rect: x={actual_geo.x()}, y={actual_geo.y()}, w={actual_geo.width()}, h={actual_geo.height()}")
-
-            if actual_geo.x() != new_x and not is_wayland_session:
-                logging.warning(f"POSITION MISMATCH! Expected x={new_x}, got x={actual_geo.x()}. OS or Window Manager might be clamping the window.")
 
         except Exception as e:
             logging.error(f"Error in update_position: {e}", exc_info=True)
-            alert_popup(self, "Update Position Error", f"Error updating window position: {e}")
 
     def update_width_and_x_position(self):
         try:
