@@ -216,12 +216,16 @@ class Sidebar(QMainWindow):
         cursor_pos = QCursor.pos()
         logging.info(f"==> MẮT THẦN: Mouse ENTER at x={cursor_pos.x()}, y={cursor_pos.y()} | Current Visible={self.is_visible}")
 
-        # Bắt đầu theo dõi gesture khi chuột bước vào vùng cảm ứng
+        # Chỉ reset gesture nếu chuột vào một vùng Y hoàn toàn mới hoặc lâu rồi không chạm
+        # Nếu đang dở gesture mà lỡ văng ra rồi vào lại ngay (trong vùng 15px) thì vẫn cho tiếp tục
         if not self.is_visible:
-            self.gesture_entry_y = cursor_pos.y()
-            self.gesture_down_met = False
-            self.gesture_up_met = False
-            logging.info(f"   [GESTURE START] Initial Y={self.gesture_entry_y}")
+            if self.gesture_entry_y is None:
+                self.gesture_entry_y = cursor_pos.y()
+                self.gesture_down_met = False
+                self.gesture_up_met = False
+                logging.info(f"   [GESTURE START] Initial Y={self.gesture_entry_y}")
+            else:
+                logging.info(f"   [GESTURE RESUME] Continuing from Y={self.gesture_entry_y}")
 
         super().enterEvent(event)
 
@@ -266,10 +270,8 @@ class Sidebar(QMainWindow):
 
     def leaveEvent(self, event):
         logging.info(f"==> MẮT THẦN: Mouse LEAVE | Visible={self.is_visible}")
-        # Reset gesture khi rời vùng cảm ứng
-        self.gesture_entry_y = None
-        self.gesture_down_met = False
-        self.gesture_up_met = False
+        # KHÔNG reset gesture ngay lập tức ở đây để tránh bị văng chuột ra ngoài dải hẹp
+        # Ta sẽ dựa vào mouseMoveEvent hoặc enterEvent tiếp theo để reset nếu cần
 
         if QApplication.mouseButtons() == Qt.MouseButton.LeftButton:
             logging.info("   [LEAVE IGNORED] Mouse button pressed.")
@@ -512,7 +514,7 @@ class Sidebar(QMainWindow):
             if self.is_visible:
                 target_width = self.last_width or self.calculate_width(screen_geometry.width())
             else:
-                target_width = 5
+                target_width = 15  # Tăng từ 5 lên 15 để gesture dễ thực hiện hơn
 
             # Đảm bảo chiều rộng sidebar không vượt quá 90% chiều rộng màn hình hiện tại
             max_allowed_width = int(screen_geometry.width() * 0.9)
