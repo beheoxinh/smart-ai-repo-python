@@ -172,11 +172,9 @@ class Sidebar(QMainWindow):
 
     def on_nav_menu_state_changed(self, is_open):
         self.is_nav_menu_open = is_open
-        logging.info(f"Nav menu state changed: {'Open' if is_open else 'Closed'}")
 
     def on_webview_menu_state_changed(self, is_open):
         self.is_webview_menu_open = is_open
-        logging.info(f"Webview context menu state changed: {'Open' if is_open else 'Closed'}")
 
     def get_target_screen(self):
         screens = QApplication.screens()
@@ -188,26 +186,18 @@ class Sidebar(QMainWindow):
         self.manual_screen_index = index
         self.active_screen = self.get_target_screen()
         self.update_position()
-        logging.info(f"Manual screen set to index: {index}")
 
     def get_rightmost_screen(self):
         screens = QApplication.screens()
         if not screens:
             return QApplication.primaryScreen()
 
-        # In ra list màn hình để kiểm tra thứ tự
-        for i, s in enumerate(screens):
-            logging.info(f"Screen Check [{i}]: {s.name()} | Geometry: {s.geometry()}")
-
         # Sắp xếp các màn hình theo tọa độ x + width để tìm màn hình ngoài cùng bên phải
         rightmost = max(screens, key=lambda s: s.geometry().x() + s.geometry().width())
-        logging.info(f"Detected RIGHTMOST Screen: {rightmost.name()} | Geometry: {rightmost.geometry()}")
         return rightmost
 
     def enterEvent(self, event):
-        # Log tọa độ chuột để debug
         curr_y = event.position().y()
-        logging.info(f"==> MẮT THẦN: Mouse ENTER at y={curr_y} | Current Visible={self.is_visible}")
 
         # Khởi tạo tracking gesture nếu chưa có hoặc nếu đây là lần enter mới (không phải resume)
         if not self.is_visible:
@@ -222,10 +212,6 @@ class Sidebar(QMainWindow):
                 self.gesture_down_met = False
                 self.gesture_up_met = False
                 self.gesture_start_time = time.time()
-                logging.info(f"   [GESTURE START] Initial Y={self.gesture_entry_y} at {self.gesture_start_time}")
-            else:
-                logging.info(
-                    f"   [GESTURE RESUME] Continuing from Y={self.gesture_entry_y} (Min={getattr(self, 'gesture_min_y', 0)}, Max={getattr(self, 'gesture_max_y', 0)})")
 
         super().enterEvent(event)
 
@@ -248,12 +234,11 @@ class Sidebar(QMainWindow):
             self.gesture_max_y = max(self.gesture_max_y, curr_y)
 
             # Check di xuống: Đã di chuyển xuống ít nhất 50px so với điểm cao nhất
-            if not self.gesture_down_met and (curr_y - self.gesture_min_y) > 200:
+            if not self.gesture_down_met and (curr_y - self.gesture_min_y) > 50:
                 self.gesture_down_met = True
-                logging.info(f"   [GESTURE STEP] Step: Down > 200px OK (Current={curr_y}, Min={self.gesture_min_y})")
 
             # Check di lên: Đã di chuyển lên ít nhất 50px so với điểm thấp nhất
-            if not self.gesture_up_met and (self.gesture_max_y - curr_y) > 100:
+            if not self.gesture_up_met and (self.gesture_max_y - curr_y) > 50:
                 self.gesture_up_met = True
 
             # Kiểm tra thời gian: Nếu quá 1s kể từ lúc bắt đầu thì reset
@@ -268,7 +253,6 @@ class Sidebar(QMainWindow):
 
             # Nếu thỏa mãn cả 2 thì hiện sidebar
             if self.gesture_down_met and self.gesture_up_met:
-                logging.info(f"   [GESTURE COMPLETE] Thresholds met in {gesture_duration:.2f}s. Triggering show_sidebar()")
 
                 # Reset gesture ngay để tránh trigger liên tục
                 self.gesture_entry_y = None
@@ -276,12 +260,9 @@ class Sidebar(QMainWindow):
                 if not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
                     screen = self.get_target_screen()
                     if screen and self.is_foreground_fullscreen(screen):
-                        logging.info("   [SHOW BLOCKED] Fullscreen app detected.")
                         return
                     self.active_screen = screen
                     self.show_sidebar()
-                else:
-                    logging.info(f"   [SHOW BLOCKED] UI busy: popup={self.has_active_popup}, nav={self.is_nav_menu_open}, webview={self.is_webview_menu_open}")
 
         super().mouseMoveEvent(event)
 
@@ -297,7 +278,6 @@ class Sidebar(QMainWindow):
         if (now - self.last_show_time) < 0.5:
             return
 
-        logging.info("   [AUTO HIDE] Mouse left the sidebar window (leaveEvent)!")
         self.hide_sidebar()
 
     def handle_navigation(self, url):
@@ -399,7 +379,6 @@ class Sidebar(QMainWindow):
 
     def show_sidebar(self):
         try:
-            logging.info(f"==> MẮT THẦN: [SHOW] Starting show_sidebar. is_visible was {self.is_visible}")
             if self.is_visible:
                 return
 
@@ -417,7 +396,6 @@ class Sidebar(QMainWindow):
             self.update_position()
 
             def restore_opacity():
-                logging.info("   [SHOW OPACITY] Setting opacity to 1.0")
                 self.setWindowOpacity(1.0)
 
             QTimer.singleShot(100, restore_opacity)
@@ -435,7 +413,6 @@ class Sidebar(QMainWindow):
                     return
                 # Debounce hide if just showed (tránh hiện tượng flickers/chớp tắt)
                 if (time.time() - self.last_show_time) < 0.5:
-                    logging.info(f"   [HIDE IGNORED] Too soon after show ({(time.time() - self.last_show_time) * 1000:.0f}ms)")
                     return
 
             # Giảm opacity TRƯỚC khi thu nhỏ
@@ -504,8 +481,6 @@ class Sidebar(QMainWindow):
             new_y = screen_geometry.y()
             new_w = target_width
             new_h = screen_geometry.height()
-
-            logging.info(f"==> MẮT THẦN: [MOVE] Target: x={new_x}, y={new_y}, w={new_w}, h={new_h} | Visible={self.is_visible}")
 
             # Ép window handle sang đúng screen nếu cần (chỉ làm khi thực sự lệch màn hình)
             if self.windowHandle() and self.windowHandle().screen() != self.active_screen:
