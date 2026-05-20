@@ -37,8 +37,26 @@ class Sidebar(QMainWindow):
         self.last_width = None
         self.is_made_sticky = False  # Flag for workspace stickiness
         self.manual_screen_index = -1  # -1 means auto (rightmost)
+        self.last_mouse_screen = None
+
         self.init_ui()
         self.setup_shortcut()
+
+        # Timer debug tọa độ chuột và màn hình
+        self.debug_timer = QTimer(self)
+        self.debug_timer.timeout.connect(self.debug_mouse_position)
+        self.debug_timer.start(1000)  # Mỗi 1 giây log một lần
+
+    def debug_mouse_position(self):
+        cursor_pos = QCursor.pos()
+        screen = QApplication.screenAt(cursor_pos)
+        if screen:
+            screen_name = screen.name()
+            if screen_name != self.last_mouse_screen:
+                logging.info(f"MOUSE MOVED to Screen: {screen_name} | Geometry: {screen.geometry()}")
+                self.last_mouse_screen = screen_name
+            # Log tọa độ thô để soi
+            # logging.debug(f"Mouse Pos: x={cursor_pos.x()}, y={cursor_pos.y()}")
 
     def calculate_width(self, screen_width):
         return int(screen_width * 0.5)
@@ -169,8 +187,15 @@ class Sidebar(QMainWindow):
         screens = QApplication.screens()
         if not screens:
             return QApplication.primaryScreen()
+
+        # In ra list màn hình để kiểm tra thứ tự
+        for i, s in enumerate(screens):
+            logging.info(f"Screen Check [{i}]: {s.name()} | Geometry: {s.geometry()}")
+
         # Sắp xếp các màn hình theo tọa độ x + width để tìm màn hình ngoài cùng bên phải
-        return max(screens, key=lambda s: s.geometry().x() + s.geometry().width())
+        rightmost = max(screens, key=lambda s: s.geometry().x() + s.geometry().width())
+        logging.info(f"Detected RIGHTMOST Screen: {rightmost.name()} | Geometry: {rightmost.geometry()}")
+        return rightmost
 
     def enterEvent(self, event):
         # Log tọa độ chuột để debug
