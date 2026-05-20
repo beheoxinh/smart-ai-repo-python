@@ -15,7 +15,7 @@ except ImportError:
 
 from PyQt6.QtCore import Qt, QTimer, QUrl
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QApplication
-from PyQt6.QtGui import QShortcut, QKeySequence
+from PyQt6.QtGui import QShortcut, QKeySequence, QCursor
 
 from components.resize_handle import ResizeHandle
 from components.content_widget import ContentWidget
@@ -44,6 +44,7 @@ class Sidebar(QMainWindow):
         self._x11_display = None
         self._x11_lib = None
         self._last_focus_grab_time = 0
+        self._last_sticky_id = None
         self.watchdog_timer = None
         self.resize_handle = None
         self.main_ui_container = None
@@ -120,7 +121,6 @@ class Sidebar(QMainWindow):
         if self.is_resizing:
             return
 
-        from PyQt6.QtGui import QCursor
         global_pos = QCursor.pos()
         local_pos = self.mapFromGlobal(global_pos)
 
@@ -211,6 +211,11 @@ class Sidebar(QMainWindow):
             container_layout.addWidget(main_widget)
             self.setCentralWidget(container)
 
+            # Diagnostics
+            logging.info(f"UI Init: Sidebar WinID={hex(int(self.winId()))}")
+            if hasattr(self, 'content_widget') and self.content_widget.web_view:
+                logging.info(f"UI Init: WebView WinID={hex(int(self.content_widget.web_view.winId()))}")
+
             # Ép minimum width về 0 để có thể thu nhỏ cửa sổ về dải cảm ứng (sensor)
             # Nhưng CHỈ ép khi ở chế độ ẩn, khi hiện thì trả lại giá trị mặc định để tránh hỏng layout
             self.setMinimumWidth(0)
@@ -244,30 +249,39 @@ class Sidebar(QMainWindow):
             raise
 
     def _make_sticky_linux(self):
-        if self.is_made_sticky or sys.platform != "linux" or QApplication.platformName() != 'xcb':
+        if sys.platform != "linux" or QApplication.platformName() != 'xcb':
             return
+
+        win_id_ptr = self.winId()
+        if not win_id_ptr:
+            return
+        hex_id = hex(int(win_id_ptr))
+
+        # Check if ID changed since last sticky apply
+        if self.is_made_sticky and hex_id == self._last_sticky_id:
+            return
+
+        logging.info(f"Linux Sticky Check: WinID={hex_id} (last={self._last_sticky_id})")
 
         wmctrl_path = shutil.which('wmctrl')
         if not wmctrl_path:
             logging.warning("wmctrl missing, cannot set sticky bit")
             self.is_made_sticky = True
+            self._last_sticky_id = hex_id
             return
 
         try:
-            win_id_ptr = self.winId()
-            if not win_id_ptr:
-                return
-            hex_id = hex(int(win_id_ptr))
-
             # Standard sticky/skip flags
             subprocess.run(['wmctrl', '-i', '-r', hex_id, '-b', 'add,sticky,skip_taskbar,skip_pager'],
                            check=True, capture_output=True, text=True, timeout=1.0)
 
             logging.info(f"Linux window {hex_id} configured as sticky.")
             self.is_made_sticky = True
+            self._last_sticky_id = hex_id
         except Exception as e:
             logging.error(f"Failed to configure Linux window: {e}")
             self.is_made_sticky = True
+            self._last_sticky_id = hex_id
 
     def _grab_focus_linux(self, forced=False):
         """Force focus on X11 even with BypassWindowManagerHint.
@@ -282,11 +296,16 @@ class Sidebar(QMainWindow):
             return
         self._last_focus_grab_time = now
 
-        win_id = self.winId()
-        if not win_id or int(win_id) == 0:
+        win_id = int(self.winId())
+        if win_id == 0:
             return
 
-        logging.info("X11 Focus Grab: Requesting input focus for window " + hex(int(win_id)))
+        webview_win_id = 0
+        if hasattr(self, 'content_widget') and self.content_widget.web_view:
+            webview_win_id = int(self.content_widget.web_view.winId())
+
+        logging.info(f"X11 Focus Grab (forced={forced}): Sidebar={hex(win_id)}, WebView={hex(webview_win_id)}")
+
         try:
             # Cache the library handle and function signatures
             if not hasattr(self, '_x11_lib'):
@@ -297,6 +316,9 @@ class Sidebar(QMainWindow):
 
                 lib.XSetInputFocus.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
                 lib.XSetInputFocus.restype = ctypes.c_int
+
+                lib.XRaiseWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+                lib.XRaiseWindow.restype = ctypes.c_int
 
                 lib.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
                 lib.XSync.restype = ctypes.c_int
@@ -319,20 +341,23 @@ class Sidebar(QMainWindow):
             self.setFocus()
 
             # RevertToParent = 1, CurrentTime = 0
-            self._x11_lib.XSetInputFocus(self._x11_display, int(win_id), 1, 0)
+            # Grabbing focus on both windows to be safe
+            self._x11_lib.XRaiseWindow(self._x11_display, win_id)
+            self._x11_lib.XSetInputFocus(self._x11_display, win_id, 1, 0)
+
+            if webview_win_id != 0:
+                self._x11_lib.XRaiseWindow(self._x11_display, webview_win_id)
+                self._x11_lib.XSetInputFocus(self._x11_display, webview_win_id, 1, 0)
+
             self._x11_lib.XSync(self._x11_display, 0)
 
             # Explicitly set focus to web_view to ensure typing works
-            if hasattr(self, 'content_widget') and self.content_widget.web_view:
+            if webview_win_id != 0:
                 self.content_widget.web_view.setFocus()
-                # Ensure it's active
                 self.content_widget.web_view.activateWindow()
 
-            # We don't close the display here to keep it cached for the next call.
-            # It will be cleaned up by OS or we can add a cleanup in closeEvent.
-
         except Exception as e:
-            logging.debug(f"X11 focus grab failed: {e}")
+            logging.error(f"X11 focus grab failed: {e}")
             self._x11_display = None  # Reset on failure
 
     def focusInEvent(self, event):
@@ -345,6 +370,13 @@ class Sidebar(QMainWindow):
     def focusOutEvent(self, event):
         logging.info(f"Qt Focus Event: {event.type().name}")
         super().focusOutEvent(event)
+
+        # Handle focus bounce if mouse is still inside
+        if self.is_visible:
+            # check if mouse is inside the sidebar
+            if self.rect().contains(self.mapFromGlobal(QCursor.pos())):
+                logging.info("FocusOut bounce detected: Mouse still inside. Re-grabbing focus...")
+                QTimer.singleShot(50, lambda: self._grab_focus_linux(forced=True))
 
     def showEvent(self, event):
         super().showEvent(event)
