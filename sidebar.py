@@ -40,6 +40,15 @@ class Sidebar(QMainWindow):
         self.is_made_sticky = False  # Flag for workspace stickiness
         self.manual_screen_index = -1  # -1 means auto (rightmost)
         self.last_mouse_screen = None
+        self._last_processed_y = 0
+        self._x11_display = None
+        self._x11_lib = None
+        self._last_focus_grab_time = 0
+        self.watchdog_timer = None
+        self.resize_handle = None
+        self.main_ui_container = None
+        self.content_widget = None
+        self.bottom_bar = None
 
         # Gesture Trigger State
         self.gesture_entry_y = None
@@ -49,10 +58,94 @@ class Sidebar(QMainWindow):
         self.gesture_up_met = False
         self._last_log_y = 0
         self.last_show_time = 0
+        self.last_mouse_in_time = time.time()
         self.gesture_start_time = 0
+        self._last_focus_grab_time = 0
+        self._x11_display = None
+        self._is_fullscreen_active = False
+
+        self.watchdog_timer = QTimer(self)
+        self.fullscreen_timer = QTimer(self)
 
         self.init_ui()
+        self.setup_stability_watchdog()
+        self.setup_fullscreen_watchdog()
         self.setup_shortcut()
+
+    def setup_stability_watchdog(self):
+        self.watchdog_timer.timeout.connect(self._stability_check)
+        self.watchdog_timer.start(1000)  # Check every 1s for better responsiveness
+
+    def setup_fullscreen_watchdog(self):
+        self.fullscreen_timer.timeout.connect(self._update_fullscreen_state)
+        self.fullscreen_timer.start(2000)  # Check every 2s
+
+    def _update_fullscreen_state(self):
+        """Update fullscreen state asynchronously to avoid blocking main thread."""
+        if sys.platform == "win32":
+            # Windows implementation is fast (win32gui calls)
+            self._is_fullscreen_active = self.is_foreground_fullscreen(self.active_screen)
+            return
+
+        if sys.platform != "linux" or QApplication.platformName() == "wayland":
+            return
+
+        from PyQt6.QtCore import QProcess
+
+        # We chain two xprop calls. First to get active window, then its state.
+        # To keep it simple and truly non-blocking, we use a single QProcess with a shell command.
+        process = QProcess(self)
+
+        def on_finished():
+            try:
+                output = process.readAllStandardOutput().data().decode().strip()
+                self._is_fullscreen_active = '_NET_WM_STATE_FULLSCREEN' in output
+            except Exception:
+                pass
+            process.deleteLater()
+
+        process.finished.connect(on_finished)
+        # Get active window ID and then its state in one go
+        cmd = "id=$(xprop -root 32x '\t$0' _NET_ACTIVE_WINDOW | cut -f2); [ -n \"$id\" ] && [ \"$id\" != \"0x0\" ] && xprop -id \"$id\" _NET_WM_STATE"
+        process.start("bash", ["-c", cmd])
+
+    def _stability_check(self):
+        """Cleanup stuck states if sidebar is visible but mouse is away."""
+        if not self.is_visible:
+            return
+
+        # Don't hide if user is explicitly resizing
+        if self.is_resizing:
+            return
+
+        from PyQt6.QtGui import QCursor
+        global_pos = QCursor.pos()
+        local_pos = self.mapFromGlobal(global_pos)
+
+        # Margin to allow mouse to be slightly outside without hiding
+        margin = 100
+        is_mouse_inside = self.rect().adjusted(-margin, -margin, margin, margin).contains(local_pos)
+
+        now = time.time()
+        if is_mouse_inside:
+            self.last_mouse_in_time = now
+            return
+
+        time_away = now - self.last_mouse_in_time
+
+        # Force reset if away for > 20s (even if menus/popups are open)
+        if time_away > 20.0:
+            logging.info(f"Watchdog: Force reset after {time_away:.1f}s away")
+            self.is_nav_menu_open = False
+            self.is_webview_menu_open = False
+            self.has_active_popup = False
+            self.hide_sidebar(reason="watchdog_force")
+            return
+
+        # Normal hide if away for > 5s and no menus/popups are open
+        if time_away > 5.0 and not (self.has_active_popup or self.is_nav_menu_open or self.is_webview_menu_open):
+            logging.info(f"Watchdog: Hiding sidebar after {time_away:.1f}s away")
+            self.hide_sidebar(reason="watchdog")
 
     def calculate_width(self, screen_width):
         return int(screen_width * 0.5)
@@ -96,7 +189,7 @@ class Sidebar(QMainWindow):
             self.bottom_bar = BottomBar()
             main_layout.addWidget(self.bottom_bar)
 
-            self.content_widget.closeRequested.connect(self.hide_sidebar)
+            self.content_widget.closeRequested.connect(lambda: self.hide_sidebar(reason="close_button"))
             self.content_widget.web_view.popupCreated.connect(self.handle_popup_created)
             self.content_widget.web_view.webviewRedirectCompleted.connect(self.handle_webview_redirect_completed)
             self.content_widget.nav_bar.navigationClicked.connect(self.handle_navigation)
@@ -131,7 +224,7 @@ class Sidebar(QMainWindow):
                 }
             """)
 
-            self.hide_sidebar(initial=True)
+            self.hide_sidebar(initial=True, reason="initial")
 
         except Exception as e:
             logging.error(f"Sidebar Initialization Error: {e}", exc_info=True)
@@ -156,7 +249,7 @@ class Sidebar(QMainWindow):
 
             # Standard sticky/skip flags
             subprocess.run(['wmctrl', '-i', '-r', hex_id, '-b', 'add,sticky,skip_taskbar,skip_pager'],
-                           check=True, capture_output=True, text=True)
+                           check=True, capture_output=True, text=True, timeout=1.0)
 
             logging.info(f"Linux window {hex_id} configured as sticky.")
             self.is_made_sticky = True
@@ -171,6 +264,12 @@ class Sidebar(QMainWindow):
         if sys.platform != "linux" or QApplication.platformName() != 'xcb':
             return
 
+        now = time.time()
+        # Cooldown: Don't grab focus more than once every 500ms unless explicitly requested
+        if (now - self._last_focus_grab_time) < 0.5:
+            return
+        self._last_focus_grab_time = now
+
         win_id = self.winId()
         if not win_id or int(win_id) == 0:
             return
@@ -180,37 +279,37 @@ class Sidebar(QMainWindow):
             if not hasattr(self, '_x11_lib'):
                 lib = ctypes.cdll.LoadLibrary("libX11.so.6")
 
-                # Display* XOpenDisplay(char*)
                 lib.XOpenDisplay.argtypes = [ctypes.c_char_p]
                 lib.XOpenDisplay.restype = ctypes.c_void_p
 
-                # int XSetInputFocus(Display*, Window, int, Time)
-                # Window and Time are 64-bit unsigned longs on x86_64
                 lib.XSetInputFocus.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
                 lib.XSetInputFocus.restype = ctypes.c_int
 
-                # int XSync(Display*, Bool)
                 lib.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
                 lib.XSync.restype = ctypes.c_int
 
-                # int XCloseDisplay(Display*)
                 lib.XCloseDisplay.argtypes = [ctypes.c_void_p]
                 lib.XCloseDisplay.restype = ctypes.c_int
 
                 self._x11_lib = lib
 
-            display = self._x11_lib.XOpenDisplay(None)
-            if not display:
+            # Use cached display if available and not invalid
+            if not self._x11_display:
+                self._x11_display = self._x11_lib.XOpenDisplay(None)
+
+            if not self._x11_display:
                 return
 
             # RevertToParent = 1, CurrentTime = 0
-            # Explicitly cast winId to int for c_ulong
-            self._x11_lib.XSetInputFocus(display, int(win_id), 1, 0)
-            self._x11_lib.XSync(display, 0)
-            self._x11_lib.XCloseDisplay(display)
+            self._x11_lib.XSetInputFocus(self._x11_display, int(win_id), 1, 0)
+            self._x11_lib.XSync(self._x11_display, 0)
+
+            # We don't close the display here to keep it cached for the next call.
+            # It will be cleaned up by OS or we can add a cleanup in closeEvent.
 
         except Exception as e:
             logging.debug(f"X11 focus grab failed: {e}")
+            self._x11_display = None  # Reset on failure
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -251,6 +350,7 @@ class Sidebar(QMainWindow):
         return rightmost
 
     def enterEvent(self, event):
+        self.last_mouse_in_time = time.time()
         curr_y = event.position().y()
 
         # Khởi tạo tracking gesture nếu chưa có hoặc nếu đây là lần enter mới (không phải resume)
@@ -272,6 +372,7 @@ class Sidebar(QMainWindow):
         super().enterEvent(event)
 
     def mouseMoveEvent(self, event):
+        self.last_mouse_in_time = time.time()
         # Chỉ xử lý gesture khi sidebar đang ở chế độ cảm ứng
         if not self.is_visible and self.gesture_entry_y is not None:
             curr_y = event.position().y()
@@ -315,7 +416,7 @@ class Sidebar(QMainWindow):
 
                 if not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
                     screen = self.get_target_screen()
-                    if screen and self.is_foreground_fullscreen(screen):
+                    if screen and self._is_fullscreen_active:
                         return
                     self.active_screen = screen
                     self.show_sidebar()
@@ -323,6 +424,7 @@ class Sidebar(QMainWindow):
         super().mouseMoveEvent(event)
 
     def mousePressEvent(self, event):
+        self.last_mouse_in_time = time.time()
         self.activateWindow()
         self._grab_focus_linux()
         super().mousePressEvent(event)
@@ -335,7 +437,14 @@ class Sidebar(QMainWindow):
             return
 
         # Chỉ ẩn nếu nó đang hiện, không phải đang resize, popup, hoặc menu đang mở
-        if not self.is_visible or self.is_resizing or self.has_active_popup or self.is_nav_menu_open or self.is_webview_menu_open:
+        if not self.is_visible:
+            return
+
+        if self.is_resizing:
+            return
+
+        if self.has_active_popup or self.is_nav_menu_open or self.is_webview_menu_open:
+            logging.info(f"Sidebar leaveEvent: Not hiding (popup={self.has_active_popup}, nav={self.is_nav_menu_open}, webview={self.is_webview_menu_open})")
             return
 
         now = time.time()
@@ -344,7 +453,7 @@ class Sidebar(QMainWindow):
             return
 
         logging.info("Sidebar hide triggered by leaveEvent")
-        self.hide_sidebar()
+        self.hide_sidebar(reason="leaveEvent")
 
     def handle_navigation(self, url):
         try:
@@ -398,7 +507,6 @@ class Sidebar(QMainWindow):
     def is_foreground_fullscreen(self, screen):
         try:
             if sys.platform == "win32" and win32gui is not None:
-                # ... (giữ nguyên code win32)
                 hwnd = win32gui.GetForegroundWindow()
                 if not hwnd:
                     return False
@@ -411,25 +519,6 @@ class Sidebar(QMainWindow):
                 screen_height = screen.geometry().height()
                 return win_width >= screen_width and win_height >= screen_height
 
-            elif sys.platform == "linux":
-                if QApplication.platformName() == "wayland":
-                    # Trên Wayland native, không có cách chuẩn để check fullscreen của app khác
-                    # Ta tạm thời trả về False để tránh block sidebar vô lý
-                    return False
-
-                import subprocess
-                try:
-                    # Logic xprop chỉ dành cho X11
-                    active_win_out = subprocess.check_output(['xprop', '-root', '32x', '\t$0', '_NET_ACTIVE_WINDOW'], stderr=subprocess.DEVNULL).decode().strip()
-                    # ...
-                    win_id = active_win_out.split('\t')[-1].strip()
-                    if win_id and win_id != "0x0":
-                        win_props = subprocess.check_output(['xprop', '-id', win_id, '_NET_WM_STATE'], stderr=subprocess.DEVNULL).decode()
-                        if '_NET_WM_STATE_FULLSCREEN' in win_props:
-                            return True
-                except Exception:
-                    pass
-
         except Exception as e:
             logging.error(f"Error checking fullscreen state: {e}")
         return False
@@ -437,7 +526,7 @@ class Sidebar(QMainWindow):
     def toggle_sidebar(self):
         try:
             if self.is_visible:
-                self.hide_sidebar()
+                self.hide_sidebar(reason="toggle")
             else:
                 self.show_sidebar()
         except Exception as e:
@@ -474,12 +563,13 @@ class Sidebar(QMainWindow):
             self.raise_()
             self.activateWindow()
             self.setFocus()
-            self._grab_focus_linux()
+            # Delay focus grab slightly to let the window realize it exists
+            QTimer.singleShot(200, self._grab_focus_linux)
 
         except Exception as e:
             logging.error(f"Error in show_sidebar: {e}", exc_info=True)
 
-    def hide_sidebar(self, initial=False):
+    def hide_sidebar(self, initial=False, reason="manual"):
         try:
             if not initial:
                 if self.is_resizing or not self.is_visible:
@@ -488,7 +578,7 @@ class Sidebar(QMainWindow):
                 if (time.time() - self.last_show_time) < 0.5:
                     return
 
-            logging.info(f"Hiding sidebar (initial={initial})")
+            logging.info(f"Hiding sidebar (initial={initial}, reason={reason})")
             # Giảm opacity TRƯỚC khi thu nhỏ
             self.setWindowOpacity(0.01)
 
@@ -514,6 +604,12 @@ class Sidebar(QMainWindow):
 
     def closeEvent(self, event):
         try:
+            if hasattr(self, '_x11_display') and self._x11_display:
+                try:
+                    self._x11_lib.XCloseDisplay(self._x11_display)
+                    self._x11_display = None
+                except Exception:
+                    pass
             self.content_widget.web_view.deleteLater()
             event.accept()
         except Exception as e:
