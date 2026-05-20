@@ -429,21 +429,18 @@ class Sidebar(QMainWindow):
             is_wayland_session = os.environ.get("XDG_SESSION_TYPE") == "wayland"
 
             # QUAN TRỌNG: Kiểm tra xem window đã ở đúng screen chưa
-            if self.windowHandle() and self.windowHandle().screen() != self.active_screen:
-                logging.info(f"Switching window handle from {self.windowHandle().screen().name()} to {self.active_screen.name()}")
+            current_screen = self.windowHandle().screen() if self.windowHandle() else None
+            if current_screen and current_screen.name() != self.active_screen.name():
+                logging.info(f"FORCE SWITCH: Moving handle from {current_screen.name()} to {self.active_screen.name()}")
 
-                # Nếu là Wayland (kể cả khi đang chạy qua xcb/XWayland), 
-                # việc chuyển screen thường cần hide/show để compositor nhận diện lại
-                if is_wayland_session or platform == "wayland":
-                    self.hide()
-                    self.windowHandle().setScreen(self.active_screen)
-                    # Ép window handle cập nhật
-                    self.windowHandle().setScreen(self.active_screen)
-                    # Delay một chút trước khi hiện lại
-                    QTimer.singleShot(150, self.show)
-                    logging.info(f"Wayland/XWayland session: Hide/Show triggered for screen switch to {self.active_screen.name()}")
-                else:
-                    self.windowHandle().setScreen(self.active_screen)
+                # Trên Wayland/XWayland, phải hide đi rồi mới setScreen mới ăn
+                self.hide()
+                self.windowHandle().setScreen(self.active_screen)
+
+                # Dùng timer để show lại sau khi compositor đã cập nhật screen association
+                QTimer.singleShot(200, self.show)
+                QTimer.singleShot(250, lambda: self.update_position())
+                return  # Thoát ra để timer xử lý tiếp
 
             # Sử dụng chiều rộng mục tiêu: 
             # Nếu đang hiện thì là last_width, nếu đang ẩn thì là 5px
