@@ -64,7 +64,7 @@ class Sidebar(QMainWindow):
         try:
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint |
-                Qt.WindowType.ToolTip |
+                Qt.WindowType.Tool |
                 Qt.WindowType.WindowStaysOnTopHint |
                 Qt.WindowType.NoDropShadowWindowHint
             )
