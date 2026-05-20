@@ -75,7 +75,7 @@ class Sidebar(QMainWindow):
 
     def setup_stability_watchdog(self):
         self.watchdog_timer.timeout.connect(self._stability_check)
-        self.watchdog_timer.start(100)  # High-frequency watchdog: 100ms (0.1s)
+        self.watchdog_timer.start(150)  # High-frequency watchdog: 150ms (0.15s)
 
     def setup_fullscreen_watchdog(self):
         self.fullscreen_timer.timeout.connect(self._update_fullscreen_state)
@@ -112,7 +112,7 @@ class Sidebar(QMainWindow):
 
     def _stability_check(self):
         """Cleanup stuck states if sidebar is visible but mouse is away.
-        Focus Watchdog part runs every 100ms for aggressive focus management.
+        Focus Watchdog part runs every 150ms for aggressive focus management.
         """
         if not self.is_visible:
             return
@@ -133,9 +133,8 @@ class Sidebar(QMainWindow):
         if is_mouse_inside:
             self.last_mouse_in_time = now
             # Focus Watchdog: if mouse is inside and visible but window doesn't have focus, grab it
-            # Aggressively check every 100ms
+            # Aggressively check every 150ms
             if not self.isActiveWindow():
-                logging.info("Watchdog: Focus lost detected, re-grabbing focus...")
                 self._grab_focus_linux()
             return
 
@@ -290,6 +289,10 @@ class Sidebar(QMainWindow):
         if sys.platform != "linux" or QApplication.platformName() != 'xcb':
             return
 
+        # Let clicks pass through without immediate focus grab interference
+        if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+            return
+
         now = time.time()
         # Cooldown: Don't grab focus more than once every 100ms unless explicitly requested
         if not forced and (now - self._last_focus_grab_time) < 0.1:
@@ -307,7 +310,8 @@ class Sidebar(QMainWindow):
             except (AttributeError, RuntimeError):
                 pass
 
-        logging.info(f"X11 Focus Grab (forced={forced}): Sidebar={hex(win_id)}, WebView={hex(webview_win_id)}")
+        if forced:
+            logging.info(f"X11 Focus Grab (forced={forced}): Sidebar={hex(win_id)}, WebView={hex(webview_win_id)}")
 
         try:
             # Cache the library handle and function signatures
@@ -346,11 +350,13 @@ class Sidebar(QMainWindow):
 
             # RevertToParent = 1, CurrentTime = 0
             # Grabbing focus on both windows to be safe
-            self._x11_lib.XRaiseWindow(self._x11_display, win_id)
+            if forced:
+                self._x11_lib.XRaiseWindow(self._x11_display, win_id)
             self._x11_lib.XSetInputFocus(self._x11_display, win_id, 1, 0)
 
             if webview_win_id != 0:
-                self._x11_lib.XRaiseWindow(self._x11_display, webview_win_id)
+                if forced:
+                    self._x11_lib.XRaiseWindow(self._x11_display, webview_win_id)
                 self._x11_lib.XSetInputFocus(self._x11_display, webview_win_id, 1, 0)
 
             self._x11_lib.XSync(self._x11_display, 0)
@@ -370,17 +376,6 @@ class Sidebar(QMainWindow):
         # When sidebar gets focus, ensure webview also has it
         if hasattr(self, 'content_widget') and self.content_widget.web_view:
             self.content_widget.web_view.setFocus()
-
-    def focusOutEvent(self, event):
-        logging.info(f"Qt Focus Event: {event.type().name}")
-        super().focusOutEvent(event)
-
-        # Handle focus bounce if mouse is still inside
-        if self.is_visible:
-            # check if mouse is inside the sidebar
-            if self.rect().contains(self.mapFromGlobal(QCursor.pos())):
-                logging.info("FocusOut bounce detected: Mouse still inside. Re-grabbing focus...")
-                QTimer.singleShot(50, lambda: self._grab_focus_linux(forced=True))
 
     def showEvent(self, event):
         super().showEvent(event)
