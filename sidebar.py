@@ -330,33 +330,29 @@ class Sidebar(QMainWindow):
         try:
             if self.is_visible: return
 
-            # Luôn cập nhật màn hình mục tiêu trước khi hiển thị
             self.active_screen = self.get_target_screen()
             if not self.active_screen:
                 self.active_screen = QApplication.primaryScreen()
 
-            # BẮT BUỘC: Ép screen trước khi gọi show()
-            # winId() đảm bảo windowHandle() được tạo ra
+            # Đảm bảo window handle tồn tại và đúng screen
             self.winId()
             if self.windowHandle():
-                logging.info(f"PRE-SHOW: Setting screen to {self.active_screen.name()}")
                 self.windowHandle().setScreen(self.active_screen)
 
-            # Reset style về bình thường khi hiện
+            # Đánh dấu trạng thái hiển thị nhưng CHƯA tăng opacity ngay
+            self.is_visible = True
+            
+            # Cập nhật vị trí và kích thước ngay lập tức (vẫn đang opacity 0.01)
+            self.update_position()
+
+            # Sau khi đã ở đúng vị trí, mới hiện nguyên hình
+            # Sử dụng delay cực ngắn để đảm bảo compositor đã kịp cập nhật vị trí
+            QTimer.singleShot(30, lambda: self.setWindowOpacity(1.0))
+            
             self.setStyleSheet("QMainWindow { background-color: #33322F; }")
             if hasattr(self, 'centralWidget') and self.centralWidget():
                 self.centralWidget().setStyleSheet("background-color: transparent;")
 
-            target_width = self.last_width or self.calculate_width(self.active_screen.geometry().width())
-
-            self.setWindowOpacity(1.0)
-            self.setFixedWidth(target_width)
-            self.is_visible = True
-
-            # Cập nhật tọa độ lần cuối
-            self.update_position()
-
-            self.show()
             self.raise_()
             self.activateWindow()
 
@@ -368,25 +364,23 @@ class Sidebar(QMainWindow):
         try:
             if not initial and (self.is_resizing or not self.is_visible): return
 
-            # Make sensor area transparent
-            transparent_style = "background-color: transparent;"
-            self.setStyleSheet(f"QMainWindow {{ {transparent_style} }}")
-            if hasattr(self, 'centralWidget') and self.centralWidget():
-                self.centralWidget().setStyleSheet(transparent_style)
-
-            # Set a very low opacity for the sensor area so it's invisible but still catches mouse events
+            # Giảm opacity TRƯỚC khi thu nhỏ để tránh thấy window bị co lại
             self.setWindowOpacity(0.01)
-
-            self.is_visible = False
-            # Width 5px for the sensor
-            self.setFixedWidth(5)
+            
+            # Đợi một chút cho opacity mờ hẳn rồi mới thu nhỏ về dải cảm ứng
+            def finalize_hide():
+                self.is_visible = False
+                transparent_style = "background-color: transparent;"
+                self.setStyleSheet(f"QMainWindow {{ {transparent_style} }}")
+                if hasattr(self, 'centralWidget') and self.centralWidget():
+                    self.centralWidget().setStyleSheet(transparent_style)
+                self.update_position()
 
             if not initial:
-                self.update_position()
+                QTimer.singleShot(20, finalize_hide)
             else:
+                finalize_hide()
                 self.show()
-                # Use a small delay to ensure coordinates are correct after initialization
-                QTimer.singleShot(50, self.update_position)
 
         except Exception as e:
             logging.error(f"Error in hide_sidebar: {e}", exc_info=True)
