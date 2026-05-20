@@ -213,7 +213,7 @@ class Sidebar(QMainWindow):
 
             # Diagnostics
             logging.info(f"UI Init: Sidebar WinID={hex(int(self.winId()))}")
-            if hasattr(self, 'content_widget') and self.content_widget.web_view:
+            if self.content_widget is not None and self.content_widget.web_view is not None:
                 logging.info(f"UI Init: WebView WinID={hex(int(self.content_widget.web_view.winId()))}")
 
             # Ép minimum width về 0 để có thể thu nhỏ cửa sổ về dải cảm ứng (sensor)
@@ -301,14 +301,17 @@ class Sidebar(QMainWindow):
             return
 
         webview_win_id = 0
-        if hasattr(self, 'content_widget') and self.content_widget.web_view:
-            webview_win_id = int(self.content_widget.web_view.winId())
+        if self.content_widget is not None and self.content_widget.web_view is not None:
+            try:
+                webview_win_id = int(self.content_widget.web_view.winId())
+            except (AttributeError, RuntimeError):
+                pass
 
         logging.info(f"X11 Focus Grab (forced={forced}): Sidebar={hex(win_id)}, WebView={hex(webview_win_id)}")
 
         try:
             # Cache the library handle and function signatures
-            if not hasattr(self, '_x11_lib'):
+            if self._x11_lib is None:
                 lib = ctypes.cdll.LoadLibrary("libX11.so.6")
 
                 lib.XOpenDisplay.argtypes = [ctypes.c_char_p]
@@ -329,11 +332,12 @@ class Sidebar(QMainWindow):
                 self._x11_lib = lib
 
             # Use cached display if available and not invalid
-            if not self._x11_display:
-                self._x11_display = self._x11_lib.XOpenDisplay(None)
-
-            if not self._x11_display:
-                return
+            if self._x11_display is None:
+                display = self._x11_lib.XOpenDisplay(None)
+                if not display:
+                    logging.error("X11 Focus Grab: XOpenDisplay(None) failed (returned NULL)")
+                    return
+                self._x11_display = display
 
             # Ensure Qt knows it should have focus
             self.raise_()
@@ -631,7 +635,7 @@ class Sidebar(QMainWindow):
             self.activateWindow()
             self.setFocus()
             # Explicitly set focus to web_view to ensure typing works
-            if hasattr(self, 'content_widget') and self.content_widget.web_view:
+            if self.content_widget is not None and self.content_widget.web_view is not None:
                 self.content_widget.web_view.setFocus()
 
             # Multiple focus grabs to ensure focus is acquired
@@ -678,13 +682,14 @@ class Sidebar(QMainWindow):
 
     def closeEvent(self, event):
         try:
-            if hasattr(self, '_x11_display') and self._x11_display:
+            if self._x11_display is not None:
                 try:
                     self._x11_lib.XCloseDisplay(self._x11_display)
                     self._x11_display = None
                 except Exception:
                     pass
-            self.content_widget.web_view.deleteLater()
+            if self.content_widget is not None and self.content_widget.web_view is not None:
+                self.content_widget.web_view.deleteLater()
             event.accept()
         except Exception as e:
             alert_popup(self, "Close Event Error", f"Error during close event: {e}")
