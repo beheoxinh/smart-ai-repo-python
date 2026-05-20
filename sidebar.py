@@ -124,11 +124,15 @@ class Sidebar(QMainWindow):
 
         # Margin to allow mouse to be slightly outside without hiding
         margin = 100
-        is_mouse_inside = self.rect().adjusted(-margin, -margin, margin, margin).contains(local_pos)
+        rect = self.rect().adjusted(-margin, -margin, margin, margin)
+        is_mouse_inside = rect.contains(local_pos)
 
         now = time.time()
         if is_mouse_inside:
             self.last_mouse_in_time = now
+            # Focus Watchdog: if mouse is inside and visible but window doesn't have focus, grab it
+            if not self.isActiveWindow():
+                self._grab_focus_linux()
             return
 
         time_away = now - self.last_mouse_in_time
@@ -191,6 +195,7 @@ class Sidebar(QMainWindow):
 
             self.content_widget.closeRequested.connect(lambda: self.hide_sidebar(reason="close_button"))
             self.content_widget.web_view.popupCreated.connect(self.handle_popup_created)
+            self.content_widget.web_view.focusRequested.connect(lambda: self._grab_focus_linux(forced=True))
             self.content_widget.web_view.webviewRedirectCompleted.connect(self.handle_webview_redirect_completed)
             self.content_widget.nav_bar.navigationClicked.connect(self.handle_navigation)
             self.content_widget.nav_bar.menu_state_changed.connect(self.on_nav_menu_state_changed)
@@ -257,7 +262,7 @@ class Sidebar(QMainWindow):
             logging.error(f"Failed to configure Linux window: {e}")
             self.is_made_sticky = True
 
-    def _grab_focus_linux(self):
+    def _grab_focus_linux(self, forced=False):
         """Force focus on X11 even with BypassWindowManagerHint.
         Corrects SIGSEGV on 64-bit Linux by explicitly defining ctypes argtypes/restype.
         """
@@ -266,7 +271,7 @@ class Sidebar(QMainWindow):
 
         now = time.time()
         # Cooldown: Don't grab focus more than once every 500ms unless explicitly requested
-        if (now - self._last_focus_grab_time) < 0.5:
+        if not forced and (now - self._last_focus_grab_time) < 0.5:
             return
         self._last_focus_grab_time = now
 
@@ -303,6 +308,10 @@ class Sidebar(QMainWindow):
             # RevertToParent = 1, CurrentTime = 0
             self._x11_lib.XSetInputFocus(self._x11_display, int(win_id), 1, 0)
             self._x11_lib.XSync(self._x11_display, 0)
+
+            # Explicitly set focus to web_view to ensure typing works
+            if hasattr(self, 'content_widget') and self.content_widget.web_view:
+                self.content_widget.web_view.setFocus()
 
             # We don't close the display here to keep it cached for the next call.
             # It will be cleaned up by OS or we can add a cleanup in closeEvent.
@@ -426,7 +435,7 @@ class Sidebar(QMainWindow):
     def mousePressEvent(self, event):
         self.last_mouse_in_time = time.time()
         self.activateWindow()
-        self._grab_focus_linux()
+        self._grab_focus_linux(forced=True)
         super().mousePressEvent(event)
 
     def leaveEvent(self, event):
@@ -563,8 +572,13 @@ class Sidebar(QMainWindow):
             self.raise_()
             self.activateWindow()
             self.setFocus()
+            # Explicitly set focus to web_view to ensure typing works
+            if hasattr(self, 'content_widget') and self.content_widget.web_view:
+                self.content_widget.web_view.setFocus()
+
             # Delay focus grab slightly to let the window realize it exists
             QTimer.singleShot(200, self._grab_focus_linux)
+            QTimer.singleShot(1000, lambda: self._grab_focus_linux(forced=True))
 
         except Exception as e:
             logging.error(f"Error in show_sidebar: {e}", exc_info=True)

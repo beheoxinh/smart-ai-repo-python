@@ -27,7 +27,7 @@ class PopupWindow(QDialog):
     def __init__(self, profile):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(layout)
@@ -39,9 +39,9 @@ class PopupWindow(QDialog):
 
         self.setWindowTitle("Loading...")
         self.setMinimumSize(800, 650)
-        
+
         self.setWindowFlags(
-            Qt.WindowType.Tool | 
+            Qt.WindowType.Tool |
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.WindowCloseButtonHint
         )
@@ -49,7 +49,7 @@ class PopupWindow(QDialog):
         screen = QGuiApplication.screenAt(QCursor.pos())
         if not screen:
             screen = QGuiApplication.primaryScreen()
-        
+
         screen_geo = screen.geometry()
         window_width = int(screen_geo.width() * 0.75)
         window_height = int(screen_geo.height() * 0.75)
@@ -120,11 +120,13 @@ class CustomWebEnginePage(QWebEnginePage):
             print(f"Error creating popup window: {e}")
             return None
 
+
 class CustomWebView(QWebEngineView):
     popupCreated = pyqtSignal(object)
     popupClosed = pyqtSignal()
     webviewRedirectCompleted = pyqtSignal(str)
     clearCacheRequested = pyqtSignal()
+    focusRequested = pyqtSignal()
     # Tín hiệu mới để báo trạng thái context menu
     context_menu_state_changed = pyqtSignal(bool)
 
@@ -213,7 +215,7 @@ class CustomWebView(QWebEngineView):
         self.profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
         self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
         self.profile.downloadRequested.connect(self.handle_download_requested)
-        self.profile.setSpellCheckEnabled(False) 
+        self.profile.setSpellCheckEnabled(False)
         self.profile.setSpellCheckLanguages(['en-US'])
         self.profile.setUrlRequestInterceptor(EnhancedBrowserInterceptor())
 
@@ -329,6 +331,11 @@ class CustomWebView(QWebEngineView):
         self.setFocus()
         super().enterEvent(event)
 
+    def mousePressEvent(self, event):
+        self.setFocus()
+        self.focusRequested.emit()
+        super().mousePressEvent(event)
+
 
 class EnhancedBrowserInterceptor(QWebEngineUrlRequestInterceptor):
     def interceptRequest(self, info):
@@ -337,6 +344,6 @@ class EnhancedBrowserInterceptor(QWebEngineUrlRequestInterceptor):
                 info.setHttpHeader(b"User-Agent", b"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
                 info.setHttpHeader(b"Accept-Language", b"en-US,en;q=0.9,vi;q=0.8")
                 info.setHttpHeader(b"Accept", b"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-            
+
         except Exception as e:
             print(f"Interceptor error: {e}")
