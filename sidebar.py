@@ -215,6 +215,13 @@ class Sidebar(QMainWindow):
             if self.content_widget is not None and self.content_widget.web_view is not None:
                 logging.info(f"UI Init: WebView WinID={hex(int(self.content_widget.web_view.winId()))}")
 
+            # Ép minimum width về 0 để có thể thu nhỏ cửa sổ về dải cảm ứng (sensor)
+            # Nhưng CHỈ ép khi ở chế độ ẩn, khi hiện thì trả lại giá trị mặc định để tránh hỏng layout
+            self.setMinimumWidth(0)
+            self.main_ui_container.setMinimumWidth(0)
+            if hasattr(self, 'resize_handle'):
+                self.resize_handle.setMinimumWidth(0)
+
             primary_screen = QApplication.primaryScreen()
             if primary_screen:
                 self.last_width = self.calculate_width(primary_screen.geometry().width())
@@ -282,8 +289,8 @@ class Sidebar(QMainWindow):
         if sys.platform != "linux" or QApplication.platformName() != 'xcb':
             return
 
-        # Let clicks pass through without immediate focus grab interference,
-        # unless forced (e.g. from mousePressEvent)
+        # Let normal background watchdog skip if buttons are pressed
+        # but ALLOW forced grabs (like from clicks or show_sidebar)
         if not forced and QApplication.mouseButtons() != Qt.MouseButton.NoButton:
             return
 
@@ -411,11 +418,6 @@ class Sidebar(QMainWindow):
 
     def enterEvent(self, event):
         self.last_mouse_in_time = time.time()
-
-        # Aggressive Focus Pre-hook: Ngay khi mouse vừa chạm vào vùng cảm ứng (dải 5px)
-        # Tao sẽ ép focus luôn từ lúc này để "đón đầu" việc mày gõ chữ.
-        self._grab_focus_linux(forced=True)
-
         curr_y = event.position().y()
 
         # Khởi tạo tracking gesture nếu chưa có hoặc nếu đây là lần enter mới (không phải resume)
@@ -432,7 +434,8 @@ class Sidebar(QMainWindow):
                 self.gesture_up_met = False
                 self.gesture_start_time = time.time()
         else:
-            self._grab_focus_linux()
+            # When entering a visible sidebar, always try to grab focus
+            self._grab_focus_linux(forced=True)
 
         super().enterEvent(event)
 
@@ -490,22 +493,19 @@ class Sidebar(QMainWindow):
 
     def mousePressEvent(self, event):
         self.last_mouse_in_time = time.time()
-
-        # Ý tưởng của user: "Self-healing" focus on click.
-        # Kiểm tra xem sidebar đã thực sự gõ được chữ chưa (active window + webview focus)
-        is_active = self.isActiveWindow()
-        webview_has_focus = False
-        if self.content_widget and self.content_widget.web_view:
-            webview_has_focus = self.content_widget.web_view.hasFocus()
-
-        if not is_active or not webview_has_focus:
-            logging.info(f"MousePress Guard: Focus issue detected (Active={is_active}, WebView={webview_has_focus}). Re-hooking focus...")
-            self.activateWindow()
+        
+        # Self-healing: Aggressively grab focus on every click inside
+        # This addresses the "keyboard not working" issue on Linux/X11
+        if sys.platform == "linux" and QApplication.platformName() == 'xcb':
+            logging.info("Sidebar Click: Self-healing focus grab")
             self._grab_focus_linux(forced=True)
         else:
-            # Vẫn hook để đảm bảo X11 focus ổn định mà không cần log
-            self._grab_focus_linux(forced=True)
-
+            self.activateWindow()
+            self.setFocus()
+            
+        if hasattr(self, 'content_widget') and self.content_widget.web_view:
+            self.content_widget.web_view.setFocus()
+            
         super().mousePressEvent(event)
 
     def leaveEvent(self, event):
@@ -620,10 +620,6 @@ class Sidebar(QMainWindow):
             self.is_visible = True
             self.last_show_time = time.time()
 
-            # Cho phép cửa sổ thay đổi kích thước linh hoạt
-            self.setMinimumWidth(200)
-            self.setMaximumWidth(16777215)
-
             # Hiện nội dung chính
             if hasattr(self, 'main_ui_container'):
                 self.main_ui_container.show()
@@ -650,11 +646,12 @@ class Sidebar(QMainWindow):
             if self.content_widget is not None and self.content_widget.web_view is not None:
                 self.content_widget.web_view.setFocus()
 
-            # Multiple focus grabs to ensure focus is acquired
-            QTimer.singleShot(0, lambda: self._grab_focus_linux(forced=True))
-            QTimer.singleShot(50, lambda: self._grab_focus_linux(forced=True))
-            QTimer.singleShot(200, self._grab_focus_linux)
-            QTimer.singleShot(1000, lambda: self._grab_focus_linux(forced=True))
+            # Aggressive focus sequence with slightly varied delays
+            QTimer.singleShot(10, lambda: self._grab_focus_linux(forced=True))
+            QTimer.singleShot(100, lambda: self._grab_focus_linux(forced=True))
+            QTimer.singleShot(300, lambda: self._grab_focus_linux(forced=True))
+            QTimer.singleShot(600, lambda: self._grab_focus_linux(forced=True))
+            QTimer.singleShot(1200, lambda: self._grab_focus_linux(forced=True))
 
         except Exception as e:
             logging.error(f"Error in show_sidebar: {e}", exc_info=True)
@@ -671,10 +668,6 @@ class Sidebar(QMainWindow):
             logging.info(f"Hiding sidebar (initial={initial}, reason={reason})")
             # Giảm opacity TRƯỚC khi thu nhỏ
             self.setWindowOpacity(0.01)
-
-            # Reset constraints để có thể thu nhỏ về 5px
-            self.setMinimumWidth(0)
-            self.setMaximumWidth(16777215)
 
             def finalize_hide():
                 self.is_visible = False
@@ -728,9 +721,6 @@ class Sidebar(QMainWindow):
 
     def update_position(self, _=None):
         try:
-            if self.is_resizing:
-                return
-
             # Always update target screen before calculating coordinates
             self.active_screen = self.get_target_screen()
             if not self.active_screen:
