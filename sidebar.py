@@ -321,15 +321,17 @@ class Sidebar(QMainWindow):
             if not self.active_screen:
                 self.active_screen = QApplication.primaryScreen()
 
-            # Reset màu nền bình thường khi hiện sidebar
+            # Reset style về bình thường khi hiện
             self.setStyleSheet("QMainWindow { background-color: #33322F; }")
+            if hasattr(self, 'centralWidget') and self.centralWidget():
+                self.centralWidget().setStyleSheet("background-color: transparent;")
 
             target_width = self.last_width or self.calculate_width(self.active_screen.geometry().width())
 
             self.setWindowOpacity(1.0)
             self.setFixedWidth(target_width)
-            self.update_position()
             self.is_visible = True
+            self.update_position()
 
             self.show()
             self.raise_()
@@ -343,12 +345,16 @@ class Sidebar(QMainWindow):
         try:
             if not initial and (self.is_resizing or not self.is_visible): return
 
-            # DEBUG: Tô nền đỏ và đặt opacity cao để nhìn thấy vùng nhận diện khi ẩn
-            self.setStyleSheet("QMainWindow { background-color: rgba(255, 0, 0, 150); }")
-            self.setWindowOpacity(0.5)
+            # DEBUG: Tô đỏ rực toàn bộ container để nhìn thấy dải cảm ứng
+            red_style = "background-color: rgba(255, 0, 0, 255);"
+            self.setStyleSheet(f"QMainWindow {{ {red_style} }}")
+            if hasattr(self, 'centralWidget') and self.centralWidget():
+                self.centralWidget().setStyleSheet(red_style)
+
+            self.setWindowOpacity(0.8)  # Tăng opacity lên cho dễ thấy
 
             self.is_visible = False
-            # Tăng chiều rộng lên 5px để dễ di chuột vào hơn khi debug
+            # Chiều rộng 5px
             self.setFixedWidth(5)
 
             if not initial:
