@@ -65,12 +65,12 @@ class Sidebar(QMainWindow):
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint |
                 Qt.WindowType.Tool |
-                Qt.WindowType.X11BypassWindowManagerHint |
                 Qt.WindowType.WindowStaysOnTopHint |
                 Qt.WindowType.NoDropShadowWindowHint
             )
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
             self.setMouseTracking(True)
+            self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
             container = QWidget()
             container.setMouseTracking(True)  # QUAN TRỌNG: Phải bật ở đây thì QMainWindow mới nhận được move event
@@ -267,8 +267,16 @@ class Sidebar(QMainWindow):
 
         super().mouseMoveEvent(event)
 
+    def mousePressEvent(self, event):
+        self.activateWindow()
+        super().mousePressEvent(event)
+
     def leaveEvent(self, event):
         super().leaveEvent(event)
+
+        # Ignore if mouse button is currently pressed (e.g. while resizing or dragging)
+        if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+            return
 
         # Chỉ ẩn nếu nó đang hiện, không phải đang resize, popup, hoặc menu đang mở
         if not self.is_visible or self.is_resizing or self.has_active_popup or self.is_nav_menu_open or self.is_webview_menu_open:
@@ -279,6 +287,7 @@ class Sidebar(QMainWindow):
         if (now - self.last_show_time) < 0.5:
             return
 
+        logging.info("Sidebar hide triggered by leaveEvent")
         self.hide_sidebar()
 
     def handle_navigation(self, url):
@@ -383,6 +392,7 @@ class Sidebar(QMainWindow):
             if self.is_visible:
                 return
 
+            logging.info("Showing sidebar")
             self.is_visible = True
             self.last_show_time = time.time()
 
@@ -395,6 +405,9 @@ class Sidebar(QMainWindow):
                 self.resize_handle.show()
 
             self.update_position()
+            # Fight GNOME's automatic window placement
+            QTimer.singleShot(50, self.update_position)
+            QTimer.singleShot(200, self.update_position)
 
             def restore_opacity():
                 self.setWindowOpacity(1.0)
@@ -403,6 +416,7 @@ class Sidebar(QMainWindow):
             self.setStyleSheet("QMainWindow { background-color: #33322F; }")
             self.raise_()
             self.activateWindow()
+            self.setFocus()
 
         except Exception as e:
             logging.error(f"Error in show_sidebar: {e}", exc_info=True)
@@ -416,6 +430,7 @@ class Sidebar(QMainWindow):
                 if (time.time() - self.last_show_time) < 0.5:
                     return
 
+            logging.info(f"Hiding sidebar (initial={initial})")
             # Giảm opacity TRƯỚC khi thu nhỏ
             self.setWindowOpacity(0.01)
 
