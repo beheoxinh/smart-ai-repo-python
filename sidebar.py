@@ -50,13 +50,19 @@ class Sidebar(QMainWindow):
     def debug_mouse_position(self):
         cursor_pos = QCursor.pos()
         screen = QApplication.screenAt(cursor_pos)
+
+        # Log trạng thái thực tế của window
+        window_screen = "None"
+        if self.windowHandle() and self.windowHandle().screen():
+            window_screen = self.windowHandle().screen().name()
+
         if screen:
             screen_name = screen.name()
-            if screen_name != self.last_mouse_screen:
-                logging.info(f"MOUSE MOVED to Screen: {screen_name} | Geometry: {screen.geometry()}")
+            if screen_name != self.last_mouse_screen or window_screen != getattr(self, 'last_window_screen', ''):
+                logging.info(
+                    f"STATUS: Mouse on {screen_name} | Window ACTUALLY on {window_screen} | Target Screen: {self.active_screen.name() if self.active_screen else 'None'}")
                 self.last_mouse_screen = screen_name
-            # Log tọa độ thô để soi
-            # logging.debug(f"Mouse Pos: x={cursor_pos.x()}, y={cursor_pos.y()}")
+                self.last_window_screen = window_screen
 
     def calculate_width(self, screen_width):
         return int(screen_width * 0.5)
@@ -273,6 +279,7 @@ class Sidebar(QMainWindow):
     def is_foreground_fullscreen(self, screen):
         try:
             if sys.platform == "win32" and win32gui is not None:
+                # ... (giữ nguyên code win32)
                 hwnd = win32gui.GetForegroundWindow()
                 if not hwnd:
                     return False
@@ -286,11 +293,16 @@ class Sidebar(QMainWindow):
                 return win_width >= screen_width and win_height >= screen_height
 
             elif sys.platform == "linux":
+                if QApplication.platformName() == "wayland":
+                    # Trên Wayland native, không có cách chuẩn để check fullscreen của app khác
+                    # Ta tạm thời trả về False để tránh block sidebar vô lý
+                    return False
+
                 import subprocess
                 try:
-                    # Chỉ kiểm tra chính xác Active Window thông qua xprop. 
-                    # Nếu nó có cờ FULLSCREEN thì mới block sidebar.
+                    # Logic xprop chỉ dành cho X11
                     active_win_out = subprocess.check_output(['xprop', '-root', '32x', '\t$0', '_NET_ACTIVE_WINDOW'], stderr=subprocess.DEVNULL).decode().strip()
+                    # ...
                     win_id = active_win_out.split('\t')[-1].strip()
                     if win_id and win_id != "0x0":
                         win_props = subprocess.check_output(['xprop', '-id', win_id, '_NET_WM_STATE'], stderr=subprocess.DEVNULL).decode()
@@ -321,6 +333,13 @@ class Sidebar(QMainWindow):
             if not self.active_screen:
                 self.active_screen = QApplication.primaryScreen()
 
+            # BẮT BUỘC: Ép screen trước khi gọi show()
+            # createWinId() đảm bảo windowHandle() được tạo ra
+            self.createWinId()
+            if self.windowHandle():
+                logging.info(f"PRE-SHOW: Setting screen to {self.active_screen.name()}")
+                self.windowHandle().setScreen(self.active_screen)
+
             # Reset style về bình thường khi hiện
             self.setStyleSheet("QMainWindow { background-color: #33322F; }")
             if hasattr(self, 'centralWidget') and self.centralWidget():
@@ -331,6 +350,8 @@ class Sidebar(QMainWindow):
             self.setWindowOpacity(1.0)
             self.setFixedWidth(target_width)
             self.is_visible = True
+
+            # Cập nhật tọa độ lần cuối
             self.update_position()
 
             self.show()
