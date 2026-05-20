@@ -214,35 +214,40 @@ class Sidebar(QMainWindow):
     def enterEvent(self, event):
         # Log tọa độ chuột để debug
         cursor_pos = QCursor.pos()
-        logging.info(f"Mouse EnterEvent tại: x={cursor_pos.x()}, y={cursor_pos.y()}")
+        logging.info(f"==> MẮT THẦN: Mouse ENTER at x={cursor_pos.x()}, y={cursor_pos.y()} | Current Visible={self.is_visible}")
 
         # Bắt đầu theo dõi gesture khi chuột bước vào vùng cảm ứng
         if not self.is_visible:
             self.gesture_entry_y = cursor_pos.y()
             self.gesture_down_met = False
             self.gesture_up_met = False
-            logging.info(f"Gesture started at Y={self.gesture_entry_y}")
+            logging.info(f"   [GESTURE START] Initial Y={self.gesture_entry_y}")
 
         super().enterEvent(event)
 
     def mouseMoveEvent(self, event):
         # Chỉ xử lý gesture khi sidebar đang ở chế độ cảm ứng (5px)
         if not self.is_visible and self.gesture_entry_y is not None:
-            curr_y = QCursor.pos().y()
+            curr_pos = QCursor.pos()
+            curr_y = curr_pos.y()
+            diff = curr_y - self.gesture_entry_y
+
+            # Log mỗi khi có di chuyển để xem có bị mất dấu không
+            logging.info(f"   [GESTURE TRACK] x={curr_pos.x()}, y={curr_y}, diff={diff} | Progress: Down={self.gesture_down_met}, Up={self.gesture_up_met}")
 
             # Check di xuống > 100px
-            if not self.gesture_down_met and (curr_y - self.gesture_entry_y) > 100:
+            if not self.gesture_down_met and diff > 100:
                 self.gesture_down_met = True
-                logging.info("Gesture step 1/2: Down > 100px MET")
+                logging.info("   [GESTURE STEP] Step 1/2: Down > 100px OK")
 
             # Check di lên > 100px
-            if not self.gesture_up_met and (self.gesture_entry_y - curr_y) > 100:
+            if not self.gesture_up_met and diff < -100:
                 self.gesture_up_met = True
-                logging.info("Gesture step 2/2: Up > 100px MET")
+                logging.info("   [GESTURE STEP] Step 2/2: Up > 100px OK")
 
             # Nếu thỏa mãn cả 2 thì hiện sidebar
             if self.gesture_down_met and self.gesture_up_met:
-                logging.info("GESTURE COMPLETE! Showing sidebar...")
+                logging.info("   [GESTURE COMPLETE] Thresholds met. Triggering show_sidebar()")
 
                 # Reset gesture ngay để tránh trigger liên tục
                 self.gesture_entry_y = None
@@ -250,21 +255,27 @@ class Sidebar(QMainWindow):
                 if not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
                     screen = self.get_target_screen()
                     if screen and self.is_foreground_fullscreen(screen):
+                        logging.info("   [SHOW BLOCKED] Fullscreen app detected.")
                         return
                     self.active_screen = screen
                     self.show_sidebar()
+                else:
+                    logging.info(f"   [SHOW BLOCKED] UI busy: popup={self.has_active_popup}, nav={self.is_nav_menu_open}, webview={self.is_webview_menu_open}")
 
         super().mouseMoveEvent(event)
 
     def leaveEvent(self, event):
+        logging.info(f"==> MẮT THẦN: Mouse LEAVE | Visible={self.is_visible}")
         # Reset gesture khi rời vùng cảm ứng
         self.gesture_entry_y = None
         self.gesture_down_met = False
         self.gesture_up_met = False
 
         if QApplication.mouseButtons() == Qt.MouseButton.LeftButton:
+            logging.info("   [LEAVE IGNORED] Mouse button pressed.")
             return
         if self.is_visible and not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
+            logging.info("   [LEAVE ACTION] Calling hide_sidebar()")
             self.hide_sidebar()
 
         super().leaveEvent(event)
@@ -368,7 +379,10 @@ class Sidebar(QMainWindow):
 
     def show_sidebar(self):
         try:
-            if self.is_visible: return
+            logging.info(f"==> MẮT THẦN: [SHOW] Starting show_sidebar. is_visible was {self.is_visible}")
+            if self.is_visible:
+                logging.info("   [SHOW CANCELLED] Already visible.")
+                return
 
             self.active_screen = self.get_target_screen()
             if not self.active_screen:
@@ -390,8 +404,11 @@ class Sidebar(QMainWindow):
             self.update_position()
 
             # Sau khi đã ở đúng vị trí, mới hiện nguyên hình
-            # Tăng delay lên một chút để chắc chắn compositor đã ổn định vị trí mới
-            QTimer.singleShot(100, lambda: self.setWindowOpacity(1.0))
+            def restore_opacity():
+                logging.info("   [SHOW OPACITY] Setting opacity to 1.0")
+                self.setWindowOpacity(1.0)
+
+            QTimer.singleShot(100, restore_opacity)
 
             self.setStyleSheet("QMainWindow { background-color: #33322F; }")
             if hasattr(self, 'centralWidget') and self.centralWidget():
@@ -406,13 +423,17 @@ class Sidebar(QMainWindow):
 
     def hide_sidebar(self, initial=False):
         try:
-            if not initial and (self.is_resizing or not self.is_visible): return
+            logging.info(f"==> MẮT THẦN: [HIDE] Starting hide_sidebar(initial={initial}). is_visible was {self.is_visible}")
+            if not initial and (self.is_resizing or not self.is_visible):
+                logging.info(f"   [HIDE CANCELLED] resizing={self.is_resizing}, visible={self.is_visible}")
+                return
 
             # Giảm opacity TRƯỚC khi thu nhỏ để tránh thấy window bị co lại
             self.setWindowOpacity(0.01)
 
             # Đợi một chút cho opacity mờ hẳn rồi mới thu nhỏ về dải cảm ứng
             def finalize_hide():
+                logging.info("   [HIDE FINALIZING] Moving to sensor mode...")
                 self.is_visible = False
                 # Ẩn resize handle khi thu nhỏ về dải cảm ứng
                 if hasattr(self, 'resize_handle'):
@@ -507,7 +528,7 @@ class Sidebar(QMainWindow):
             new_h = screen_geometry.height() - bottom_margin
 
             logging.info(
-                f"MOVING WINDOW to: Screen={self.active_screen.name()} (Global X: {screen_geometry.x()}) | Target Rect: x={new_x}, y={new_y}, w={new_w}, h={new_h} | Platform: {platform} | WaylandSession: {is_wayland_session}")
+                f"==> MẮT THẦN: [MOVE] Target Rect: x={new_x}, y={new_y}, w={new_w}, h={new_h} | Visible State={self.is_visible}")
 
             # Trên XWayland, di chuyển cửa sổ xuyên màn hình đôi khi bị "clamped".
             # Ta sẽ sử dụng setGeometry để đặt cả vị trí và kích thước cùng lúc.
@@ -515,7 +536,7 @@ class Sidebar(QMainWindow):
 
             # Log kết quả thực tế sau khi đặt
             actual_geo = self.geometry()
-            logging.info(f"ACTUAL GEOMETRY after move: x={actual_geo.x()}, y={actual_geo.y()}, w={actual_geo.width()}, h={actual_geo.height()}")
+            logging.info(f"==> MẮT THẦN: [MOVE RESULT] Actual Rect: x={actual_geo.x()}, y={actual_geo.y()}, w={actual_geo.width()}, h={actual_geo.height()}")
 
             if actual_geo.x() != new_x and not is_wayland_session:
                 logging.warning(f"POSITION MISMATCH! Expected x={new_x}, got x={actual_geo.x()}. OS or Window Manager might be clamping the window.")
