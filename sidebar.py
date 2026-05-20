@@ -1,4 +1,5 @@
 # File: components/sidebar.py (Cross-platform version)
+import ctypes
 import logging
 import shutil
 import subprocess
@@ -64,7 +65,7 @@ class Sidebar(QMainWindow):
         try:
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint |
-                Qt.WindowType.Tool |
+                Qt.WindowType.Window |
                 Qt.WindowType.WindowStaysOnTopHint |
                 Qt.WindowType.NoDropShadowWindowHint
             )
@@ -140,30 +141,40 @@ class Sidebar(QMainWindow):
         if self.is_made_sticky or sys.platform != "linux" or QApplication.platformName() != 'xcb':
             return
 
-        if not shutil.which('wmctrl'):
-            logging.warning("`wmctrl` not found. Cannot make the window sticky across workspaces. Please install it (e.g., 'sudo apt-get install wmctrl').")
-            self.is_made_sticky = True  # Don't try again
+        xprop_path = shutil.which('xprop')
+        wmctrl_path = shutil.which('wmctrl')
+
+        if not xprop_path or not wmctrl_path:
+            logging.warning(f"Required tools missing for sticky/dock: xprop={bool(xprop_path)}, wmctrl={bool(wmctrl_path)}")
+            self.is_made_sticky = True
             return
 
         try:
             win_id_ptr = self.winId()
             if not win_id_ptr:
-                return  # Window not ready yet
+                return
 
             win_id = int(win_id_ptr)
             hex_id = hex(win_id)
 
+            # Set as DOCK to help GNOME respect positioning
             subprocess.run(
-                ['wmctrl', '-i', '-r', hex_id, '-b', 'add,sticky'],
-                check=True,
-                capture_output=True,
-                text=True
+                ['xprop', '-id', hex_id, '-f', '_NET_WM_WINDOW_TYPE', '32a', '-set', '_NET_WM_WINDOW_TYPE', '_NET_WM_WINDOW_TYPE_DOCK'],
+                check=True, capture_output=True, text=True
             )
-            logging.info(f"Made window {hex_id} sticky for all workspaces.")
+
+            # Standard sticky/skip flags
+            subprocess.run(
+                ['wmctrl', '-i', '-r', hex_id, '-b', 'add,sticky,skip_taskbar,skip_pager'],
+                check=True, capture_output=True, text=True
+            )
+
+            logging.info(f"Linux window {hex_id} configured as DOCK + sticky.")
             self.is_made_sticky = True
-        except (subprocess.CalledProcessError, FileNotFoundError, TypeError) as e:
-            logging.error(f"Failed to make window sticky using wmctrl: {e}")
-            self.is_made_sticky = True  # Don't try again
+            self.update_position()
+        except Exception as e:
+            logging.error(f"Failed to configure Linux window: {e}")
+            self.is_made_sticky = True
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -269,6 +280,21 @@ class Sidebar(QMainWindow):
 
     def mousePressEvent(self, event):
         self.activateWindow()
+
+        # Robust X11 focus grab for Linux/xcb
+        if sys.platform == "linux" and QApplication.platformName() == 'xcb':
+            try:
+                x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+                display = x11.XOpenDisplay(None)
+                if display:
+                    # XSetInputFocus(display, window, revert_to, time)
+                    # RevertToParent = 1, CurrentTime = 0
+                    x11.XSetInputFocus(display, int(self.winId()), 1, 0)
+                    x11.XSync(display, False)
+                    x11.XCloseDisplay(display)
+            except Exception as e:
+                logging.debug(f"X11 focus grab failed: {e}")
+
         super().mousePressEvent(event)
 
     def leaveEvent(self, event):
