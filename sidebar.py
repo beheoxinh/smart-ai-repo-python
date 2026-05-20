@@ -428,19 +428,17 @@ class Sidebar(QMainWindow):
             platform = QApplication.platformName()
             is_wayland_session = os.environ.get("XDG_SESSION_TYPE") == "wayland"
 
-            # QUAN TRỌNG: Kiểm tra xem window đã ở đúng screen chưa
-            current_screen = self.windowHandle().screen() if self.windowHandle() else None
-            if current_screen and current_screen.name() != self.active_screen.name():
-                logging.info(f"FORCE SWITCH: Moving handle from {current_screen.name()} to {self.active_screen.name()}")
+            # QUAN TRỌNG: Trên Wayland/XWayland, windowHandle().screen() cập nhật rất chậm
+            # dẫn đến loop vô tận. Ta sẽ dựa vào tọa độ thực tế để quyết định có cần ép screen không.
+            actual_x = self.x()
+            screen_geo = self.active_screen.geometry()
+            is_outside_target = (actual_x < screen_geo.x() or actual_x > (screen_geo.x() + screen_geo.width()))
 
-                # Trên Wayland/XWayland, phải hide đi rồi mới setScreen mới ăn
-                self.hide()
+            if self.windowHandle() and is_outside_target:
+                logging.info(
+                    f"SCREEN MISMATCH: Actual X {actual_x} is outside {self.active_screen.name()} ({screen_geo.x()} to {screen_geo.x() + screen_geo.width()}). Forcing...")
+                # Ép screen và tọa độ cùng lúc để phá clamping
                 self.windowHandle().setScreen(self.active_screen)
-
-                # Dùng timer để show lại sau khi compositor đã cập nhật screen association
-                QTimer.singleShot(200, self.show)
-                QTimer.singleShot(250, lambda: self.update_position())
-                return  # Thoát ra để timer xử lý tiếp
 
             # Sử dụng chiều rộng mục tiêu: 
             # Nếu đang hiện thì là last_width, nếu đang ẩn thì là 5px
