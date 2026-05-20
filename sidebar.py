@@ -160,6 +160,10 @@ class Sidebar(QMainWindow):
         return max(screens, key=lambda s: s.geometry().x() + s.geometry().width())
 
     def enterEvent(self, event):
+        # Log tọa độ chuột để debug
+        cursor_pos = QCursor.pos()
+        logging.info(f"Mouse EnterEvent tại: x={cursor_pos.x()}, y={cursor_pos.y()}")
+
         if not self.is_visible and not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
             # Luôn kiểm tra màn hình ngoài cùng bên phải thay vì màn hình hiện tại của chuột
             # để tránh việc sidebar hiện ở giữa 2 màn hình
@@ -275,6 +279,9 @@ class Sidebar(QMainWindow):
         try:
             if self.is_visible: return
 
+            # Reset màu nền bình thường khi hiện sidebar
+            self.setStyleSheet("QMainWindow { background-color: #33322F; }")
+
             if not self.active_screen:
                 self.active_screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
 
@@ -297,9 +304,13 @@ class Sidebar(QMainWindow):
         try:
             if not initial and (self.is_resizing or not self.is_visible): return
 
+            # DEBUG: Tô nền đỏ và đặt opacity cao để nhìn thấy vùng nhận diện khi ẩn
+            self.setStyleSheet("QMainWindow { background-color: rgba(255, 0, 0, 150); }")
+            self.setWindowOpacity(0.5)
+
             self.is_visible = False
-            self.setWindowOpacity(0.01)
-            self.setFixedWidth(1)
+            # Tăng chiều rộng lên 5px để dễ di chuột vào hơn khi debug
+            self.setFixedWidth(5)
 
             if not initial:
                 self.update_position()
