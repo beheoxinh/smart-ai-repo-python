@@ -1,9 +1,9 @@
 # File: components/sidebar.py (Cross-platform version)
 import logging
-import os
 import shutil
 import subprocess
 import sys
+import time
 
 try:
     import win32gui
@@ -47,14 +47,38 @@ class Sidebar(QMainWindow):
         self.gesture_down_met = False
         self.gesture_up_met = False
         self._last_log_y = 0
+        self.last_show_time = 0
+        self.gesture_start_time = 0
+
+        # Timer kiểm tra chuột rời khỏi sidebar (Auto-hide)
+        self.leave_check_timer = QTimer(self)
+        self.leave_check_timer.timeout.connect(self.check_auto_hide)
 
         self.init_ui()
         self.setup_shortcut()
 
-        # Timer debug tọa độ chuột và màn hình
-        self.debug_timer = QTimer(self)
-        self.debug_timer.timeout.connect(self.debug_mouse_position)
-        self.debug_timer.start(1000)  # Mỗi 1 giây log một lần
+    def check_auto_hide(self):
+        if not self.is_visible or self.is_resizing or self.has_active_popup or self.is_nav_menu_open or self.is_webview_menu_open:
+            return
+
+        now = time.time()
+        if (now - self.last_show_time) < 0.5:
+            return
+
+        cursor_pos = QCursor.pos()
+        cursor_x = cursor_pos.x()
+        cursor_y = cursor_pos.y()
+
+        geo = self.geometry()
+
+        # Di chuyển ra ngoài phía trái sidebar (cộng thêm 5px an toàn), hoặc sang phải (nếu có màn hình khác)
+        # hoặc di chuyển ra khỏi top/bottom
+        is_outside_x = cursor_x < (geo.left() - 5) or cursor_x > (geo.right() + 5)
+        is_outside_y = cursor_y < geo.top() or cursor_y > geo.bottom()
+
+        if is_outside_x or is_outside_y:
+            logging.info(f"   [AUTO HIDE] Mouse moved outside! Pos=({cursor_x},{cursor_y}) Geo=[L:{geo.left()}, R:{geo.right()}]")
+            self.hide_sidebar()
 
     def debug_mouse_position(self):
         cursor_pos = QCursor.pos()
@@ -67,7 +91,7 @@ class Sidebar(QMainWindow):
 
         if screen:
             screen_name = screen.name()
-            if screen_name != self.last_mouse_screen or window_screen != getattr(self, 'last_window_screen', ''):
+            if screen_name != getattr(self, 'last_mouse_screen', None) or window_screen != getattr(self, 'last_window_screen', ''):
                 logging.info(
                     f"STATUS: Mouse on {screen_name} | Window ACTUALLY on {window_screen} | Target Screen: {self.active_screen.name() if self.active_screen else 'None'}")
                 self.last_mouse_screen = screen_name
@@ -242,7 +266,8 @@ class Sidebar(QMainWindow):
                 self.gesture_max_y = curr_y
                 self.gesture_down_met = False
                 self.gesture_up_met = False
-                logging.info(f"   [GESTURE START] Initial Y={self.gesture_entry_y}")
+                self.gesture_start_time = time.time()
+                logging.info(f"   [GESTURE START] Initial Y={self.gesture_entry_y} at {self.gesture_start_time}")
             else:
                 logging.info(
                     f"   [GESTURE RESUME] Continuing from Y={self.gesture_entry_y} (Min={getattr(self, 'gesture_min_y', 0)}, Max={getattr(self, 'gesture_max_y', 0)})")
@@ -270,17 +295,20 @@ class Sidebar(QMainWindow):
             # Check di lên: Đã di chuyển lên ít nhất 100px so với điểm thấp nhất
             if not self.gesture_up_met and (self.gesture_max_y - curr_y) > 100:
                 self.gesture_up_met = True
-                logging.info(f"   [GESTURE STEP] Step: Up > 100px OK (Current={curr_y}, Max={self.gesture_max_y})")
 
-            # Log tracking (giảm bớt log move để đỡ rác, chỉ log khi có thay đổi trạng thái hoặc mỗi 10px)
-            if not hasattr(self, '_last_log_y') or abs(curr_y - self._last_log_y) > 20:
-                logging.info(
-                    f"   [GESTURE TRACK] y={curr_y} | Span=[{self.gesture_min_y}, {self.gesture_max_y}] | Progress: Down={self.gesture_down_met}, Up={self.gesture_up_met}")
-                self._last_log_y = curr_y
+            # Kiểm tra thời gian: Nếu quá 1s kể từ lúc bắt đầu thì reset
+            gesture_duration = time.time() - self.gesture_start_time
+            if gesture_duration > 1.0:
+                # Reset để bắt đầu lại chu kỳ 1s mới nếu vẫn đang ở trong vùng cảm ứng
+                self.gesture_start_time = time.time()
+                self.gesture_min_y = curr_y
+                self.gesture_max_y = curr_y
+                self.gesture_down_met = False
+                self.gesture_up_met = False
 
             # Nếu thỏa mãn cả 2 thì hiện sidebar
             if self.gesture_down_met and self.gesture_up_met:
-                logging.info("   [GESTURE COMPLETE] Thresholds met. Triggering show_sidebar()")
+                logging.info(f"   [GESTURE COMPLETE] Thresholds met in {gesture_duration:.2f}s. Triggering show_sidebar()")
 
                 # Reset gesture ngay để tránh trigger liên tục
                 self.gesture_entry_y = None
@@ -298,17 +326,7 @@ class Sidebar(QMainWindow):
         super().mouseMoveEvent(event)
 
     def leaveEvent(self, event):
-        logging.info(f"==> MẮT THẦN: Mouse LEAVE | Visible={self.is_visible}")
-        # KHÔNG reset gesture ngay lập tức ở đây để tránh bị văng chuột ra ngoài dải hẹp
-        # Ta sẽ dựa vào mouseMoveEvent hoặc enterEvent tiếp theo để reset nếu cần
-
-        if QApplication.mouseButtons() == Qt.MouseButton.LeftButton:
-            logging.info("   [LEAVE IGNORED] Mouse button pressed.")
-            return
-        if self.is_visible and not self.has_active_popup and not self.is_nav_menu_open and not self.is_webview_menu_open:
-            logging.info("   [LEAVE ACTION] Calling hide_sidebar()")
-            self.hide_sidebar()
-
+        # Chúng ta dùng check_auto_hide timer để xử lý việc ẩn chính xác hơn
         super().leaveEvent(event)
 
     def handle_navigation(self, url):
@@ -415,6 +433,7 @@ class Sidebar(QMainWindow):
                 return
 
             self.is_visible = True
+            self.last_show_time = time.time()
 
             # Hiện nội dung chính
             if hasattr(self, 'main_ui_container'):
@@ -425,8 +444,8 @@ class Sidebar(QMainWindow):
                 self.resize_handle.show()
 
             self.update_position()
+            self.leave_check_timer.start(200)  # Kiểm tra mỗi 200ms
 
-            # Sau khi đã ở đúng vị trí, mới hiện nguyên hình
             def restore_opacity():
                 logging.info("   [SHOW OPACITY] Setting opacity to 1.0")
                 self.setWindowOpacity(1.0)
@@ -441,8 +460,13 @@ class Sidebar(QMainWindow):
 
     def hide_sidebar(self, initial=False):
         try:
-            if not initial and (self.is_resizing or not self.is_visible):
-                return
+            if not initial:
+                if self.is_resizing or not self.is_visible:
+                    return
+                # Debounce hide if just showed (tránh hiện tượng flickers/chớp tắt)
+                if (time.time() - self.last_show_time) < 0.5:
+                    logging.info(f"   [HIDE IGNORED] Too soon after show ({(time.time() - self.last_show_time) * 1000:.0f}ms)")
+                    return
 
             # Giảm opacity TRƯỚC khi thu nhỏ
             self.setWindowOpacity(0.01)
@@ -456,6 +480,7 @@ class Sidebar(QMainWindow):
                     self.resize_handle.hide()
 
                 self.setStyleSheet("QMainWindow { background-color: transparent; }")
+                self.leave_check_timer.stop()
                 self.update_position()
 
             if not initial:
