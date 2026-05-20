@@ -14,7 +14,7 @@ except ImportError:
 
 from PyQt6.QtCore import Qt, QTimer, QUrl
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QApplication
-from PyQt6.QtGui import QCursor, QShortcut, QKeySequence
+from PyQt6.QtGui import QShortcut, QKeySequence
 
 from components.resize_handle import ResizeHandle
 from components.content_widget import ContentWidget
@@ -213,7 +213,7 @@ class Sidebar(QMainWindow):
         if not self.is_visible:
             # Nếu đã có gesture dở dang, ta kiểm tra xem vị trí mới có "gần" vị trí cũ không
             # Nếu quá xa (ví dụ > 50px) thì coi như gesture mới hoàn toàn
-            is_far = self.gesture_entry_y is not None and abs(curr_y - self.gesture_entry_y) > 100
+            is_far = self.gesture_entry_y is not None and abs(curr_y - self.gesture_entry_y) > 50
 
             if self.gesture_entry_y is None or is_far:
                 self.gesture_entry_y = curr_y
@@ -241,12 +241,12 @@ class Sidebar(QMainWindow):
             self.gesture_min_y = min(self.gesture_min_y, curr_y)
             self.gesture_max_y = max(self.gesture_max_y, curr_y)
 
-            # Check di xuống: Đã di chuyển xuống ít nhất 100px so với điểm cao nhất
+            # Check di xuống: Đã di chuyển xuống ít nhất 50px so với điểm cao nhất
             if not self.gesture_down_met and (curr_y - self.gesture_min_y) > 100:
                 self.gesture_down_met = True
-                logging.info(f"   [GESTURE STEP] Step: Down > 100px OK (Current={curr_y}, Min={self.gesture_min_y})")
+                logging.info(f"   [GESTURE STEP] Step: Down > 50px OK (Current={curr_y}, Min={self.gesture_min_y})")
 
-            # Check di lên: Đã di chuyển lên ít nhất 100px so với điểm thấp nhất
+            # Check di lên: Đã di chuyển lên ít nhất 50px so với điểm thấp nhất
             if not self.gesture_up_met and (self.gesture_max_y - curr_y) > 100:
                 self.gesture_up_met = True
 
@@ -281,11 +281,11 @@ class Sidebar(QMainWindow):
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
-        
+
         # Chỉ ẩn nếu nó đang hiện, không phải đang resize, popup, hoặc menu đang mở
         if not self.is_visible or self.is_resizing or self.has_active_popup or self.is_nav_menu_open or self.is_webview_menu_open:
             return
-            
+
         now = time.time()
         # Đợi 1 tí để tránh flickers nếu vừa hiện lên
         if (now - self.last_show_time) < 0.5:
@@ -491,7 +491,7 @@ class Sidebar(QMainWindow):
             if self.is_visible:
                 target_width = self.last_width or self.calculate_width(screen_geometry.width())
             else:
-                target_width = 20
+                target_width = 5
 
             # Tọa độ X tuyệt đối
             new_x = screen_geometry.x() + screen_geometry.width() - target_width
