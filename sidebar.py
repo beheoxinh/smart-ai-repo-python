@@ -98,6 +98,8 @@ class Sidebar(QMainWindow):
             container_layout.addWidget(self.resize_handle)
 
             main_widget = QWidget()
+            self.main_ui_container = main_widget  # Lưu lại để ẩn/hiện
+            main_widget.setMouseTracking(True)
             main_layout = QVBoxLayout(main_widget)
             main_layout.setContentsMargins(0, 0, 0, 0)
             main_layout.setSpacing(0)
@@ -395,6 +397,10 @@ class Sidebar(QMainWindow):
             if hasattr(self, 'resize_handle'):
                 self.resize_handle.show()
 
+            # Hiện nội dung chính
+            if hasattr(self, 'main_ui_container'):
+                self.main_ui_container.show()
+
             # Đảm bảo window handle tồn tại và đúng screen
             self.winId()
             if self.windowHandle():
@@ -438,9 +444,14 @@ class Sidebar(QMainWindow):
             def finalize_hide():
                 logging.info("   [HIDE FINALIZING] Moving to sensor mode...")
                 self.is_visible = False
+
                 # Ẩn resize handle khi thu nhỏ về dải cảm ứng
                 if hasattr(self, 'resize_handle'):
                     self.resize_handle.hide()
+
+                # Ẩn nội dung chính để tránh chặn sự kiện chuột (QUAN TRỌNG)
+                if hasattr(self, 'main_ui_container'):
+                    self.main_ui_container.hide()
 
                 transparent_style = "background-color: transparent;"
                 self.setStyleSheet(f"QMainWindow {{ {transparent_style} }}")
