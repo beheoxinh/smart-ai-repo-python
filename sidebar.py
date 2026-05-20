@@ -334,6 +334,10 @@ class Sidebar(QMainWindow):
             if not self.active_screen:
                 self.active_screen = QApplication.primaryScreen()
 
+            # Hiện resize handle khi mở sidebar
+            if hasattr(self, 'resize_handle'):
+                self.resize_handle.show()
+
             # Đảm bảo window handle tồn tại và đúng screen
             self.winId()
             if self.windowHandle():
@@ -370,6 +374,10 @@ class Sidebar(QMainWindow):
             # Đợi một chút cho opacity mờ hẳn rồi mới thu nhỏ về dải cảm ứng
             def finalize_hide():
                 self.is_visible = False
+                # Ẩn resize handle khi thu nhỏ về dải cảm ứng
+                if hasattr(self, 'resize_handle'):
+                    self.resize_handle.hide()
+
                 transparent_style = "background-color: transparent;"
                 self.setStyleSheet(f"QMainWindow {{ {transparent_style} }}")
                 if hasattr(self, 'centralWidget') and self.centralWidget():
