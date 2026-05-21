@@ -162,6 +162,8 @@ class Sidebar(QMainWindow):
         self.content_widget.web_view.popupCreated.connect(self.handle_popup_created)
         self.content_widget.web_view.focusRequested.connect(lambda: self._grab_focus_linux(forced=True))
         self.content_widget.nav_bar.navigationClicked.connect(self.handle_navigation)
+        self.content_widget.nav_bar.menu_state_changed.connect(self.on_nav_menu_state_changed)
+        self.content_widget.context_menu_state_changed.connect(self.on_webview_menu_state_changed)
 
         container_layout.addWidget(main_widget)
         self.setCentralWidget(container)
@@ -356,6 +358,26 @@ class Sidebar(QMainWindow):
         geom = screen.geometry()
         target_w = self.last_width or int(geom.width() * 0.5) if self.is_visible else 5
         self.setGeometry(geom.x() + geom.width() - target_w, geom.y(), target_w, geom.height())
+
+    def on_nav_menu_state_changed(self, is_open):
+        self.is_nav_menu_open = is_open
+
+    def on_webview_menu_state_changed(self, is_open):
+        self.is_webview_menu_open = is_open
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        # Bỏ qua nếu người dùng đang nhấn giữ chuột (ví dụ khi resize)
+        if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+            return
+        if not self.is_visible or self.is_resizing:
+            return
+        if self.has_active_popup or self.is_nav_menu_open or self.is_webview_menu_open:
+            return
+        # Đợi 1 chút để tránh flickers nếu vừa hiện lên
+        if (time.time() - self.last_show_time) < 0.5:
+            return
+        self.hide_sidebar(reason="leaveEvent")
 
     def handle_navigation(self, url):
         self.content_widget.web_view.setUrl(QUrl(url))
