@@ -1,6 +1,8 @@
 # File: components/sidebar.py (Cross-platform version)
 import ctypes
 import logging
+import shutil
+import subprocess
 import sys
 import time
 
@@ -129,8 +131,8 @@ class Sidebar(QMainWindow):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.Tool |
-            Qt.WindowType.X11BypassWindowManagerHint |
-            Qt.WindowType.WindowStaysOnTopHint
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.CustomizeWindowHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMouseTracking(True)
@@ -178,6 +180,30 @@ class Sidebar(QMainWindow):
         self.active_screen = self.get_target_screen()
         self.setStyleSheet("QMainWindow { background-color: #33322F; }")
         self.hide_sidebar(initial=True, reason="initial")
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if event.isAccepted():
+            QTimer.singleShot(150, self._make_sticky_linux)
+
+    def _make_sticky_linux(self):
+        if sys.platform != "linux" or QApplication.platformName() != 'xcb': return
+        win_id = self.winId()
+        if not win_id: return
+        hex_id = hex(int(win_id))
+
+        # Kiểm tra xem wmctrl có sẵn không
+        wmctrl_path = shutil.which('wmctrl')
+        if not wmctrl_path: return
+
+        try:
+            # Ghim cửa sổ hiển thị trên tất cả virtual desktops và bỏ qua thanh tác vụ
+            subprocess.run(['wmctrl', '-i', '-r', hex_id, '-b', 'add,sticky,skip_taskbar,skip_pager'],
+                           capture_output=True, text=True, timeout=1.0)
+            self.is_made_sticky = True
+            self._last_sticky_id = hex_id
+        except Exception:
+            pass
 
     def _focus_watchdog_check(self):
         if not self.is_visible or self.is_resizing or self.has_active_popup or self.is_nav_menu_open or self.is_webview_menu_open:
