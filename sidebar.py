@@ -415,5 +415,24 @@ class Sidebar(QMainWindow):
             return
         self.hide_sidebar(reason="leaveEvent")
 
+    def resizing_started(self):
+        self.is_resizing = True
+
+    def resizing_finished(self):
+        self.is_resizing = False
+        self.last_width = self.width()
+
+    def get_current_screen_width(self):
+        if self.active_screen:
+            return self.active_screen.geometry().width()
+        return QApplication.primaryScreen().geometry().width()
+
+    def update_width_and_x_position(self):
+        screen = self.get_target_screen()
+        if not screen: return
+        geom = screen.geometry()
+        new_x = geom.x() + geom.width() - self.width()
+        self.move(new_x, self.y())
+
     def handle_navigation(self, url):
         self.content_widget.web_view.setUrl(QUrl(url))
