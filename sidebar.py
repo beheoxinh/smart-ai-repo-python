@@ -131,8 +131,8 @@ class Sidebar(QMainWindow):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.Tool |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.CustomizeWindowHint
+            Qt.WindowType.X11BypassWindowManagerHint |
+            Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMouseTracking(True)
@@ -259,7 +259,14 @@ class Sidebar(QMainWindow):
 
             self._x11_lib.XSync(display, 0)
             self._x11_lib.XCloseDisplay(display)
-            logging.info(f"[FocusHook] Successfully grabbed X11 input focus for top-level Sidebar (win_id: {win_id})")
+
+            # Force GNOME Mutter to hand over keyboard focus to our bypassed window using wmctrl
+            hex_id = hex(win_id)
+            wmctrl_path = shutil.which('wmctrl')
+            if wmctrl_path:
+                subprocess.Popen([wmctrl_path, '-i', '-a', hex_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            logging.info(f"[FocusHook] Successfully grabbed X11 focus and triggered wmctrl activation (win_id: {win_id})")
         except Exception as e:
             logging.error(f"X11 focus grab failed: {e}")
 
