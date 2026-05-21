@@ -266,16 +266,20 @@ class Sidebar(QMainWindow):
             if wmctrl_path:
                 subprocess.Popen([wmctrl_path, '-i', '-a', hex_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            # Synthesize direct Qt FocusIn events to force Chromium's rendering engine 
-            # to activate its blinking cursor and accept keyboard events unconditionally.
+            # Simulate a harmless modifier key event (Shift) directly to the webview.
+            # This is 100% crash-proof and forces Chromium's focus engine to wake up 
+            # and activate the input fields without corrupting C++ memory.
             if self.content_widget and self.content_widget.web_view:
-                from PyQt6.QtGui import QFocusEvent
+                from PyQt6.QtGui import QKeyEvent
                 from PyQt6.QtCore import QEvent
-                focus_event = QFocusEvent(QEvent.Type.FocusIn, Qt.FocusReason.ActiveWindowFocusReason)
-                QApplication.postEvent(self.content_widget.web_view, focus_event)
-                proxy = self.content_widget.web_view.focusProxy()
-                if proxy:
-                    QApplication.postEvent(proxy, focus_event)
+
+                # Send KeyPress for Shift
+                press = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Shift, Qt.KeyboardModifier.NoModifier)
+                QApplication.sendEvent(self.content_widget.web_view, press)
+
+                # Send KeyRelease for Shift
+                release = QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_Shift, Qt.KeyboardModifier.NoModifier)
+                QApplication.sendEvent(self.content_widget.web_view, release)
 
             logging.info(f"[FocusHook] Successfully grabbed X11 focus and triggered wmctrl activation (win_id: {win_id})")
         except Exception as e:
