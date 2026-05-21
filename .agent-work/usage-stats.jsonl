@@ -95,3 +95,4 @@
 {"timestamp":"2026-05-21T02:50:14.479373701Z","prompt":"`scratch_17.txt` báo hook được nhưng mà vẫn không gõ được. rất là lạ nha. thỉnh thoảng được thỉnh thoảng khng được. cần kiểm tra kỹ lưỡng lại","model":"default","toolCalls":9}
 {"timestamp":"2026-05-21T02:54:40.459990772Z","prompt":"vẫn không được mày à, vẫn cứ lúc nhận bàn phím lúc không. có giải pháp nào triệt để hoạt động trên wayland khác không mày?","model":"default","toolCalls":7}
 {"timestamp":"2026-05-21T05:16:23.313597841Z","prompt":"chào gemini","model":"default","toolCalls":0}
+{"timestamp":"2026-05-21T05:20:08.028038678Z","prompt":"như vậy thì khi multi màn hình nó lại hiển thị sai màn hình trong gnome wayland của tao. nó bị thằng gnome ép về 1 màn hình phụ thay vì màn hình ngoài cùng bên phải","model":"default","toolCalls":12}
