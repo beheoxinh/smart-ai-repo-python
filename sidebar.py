@@ -207,21 +207,6 @@ class Sidebar(QMainWindow):
         win_id = int(self.winId())
         if win_id == 0: return
 
-        webview_win_id = 0
-        if self.content_widget and self.content_widget.web_view:
-            try:
-                # Use focusProxy to target the actual Chromium input receiver window directly
-                proxy = self.content_widget.web_view.focusProxy()
-                if proxy:
-                    webview_win_id = int(proxy.winId())
-                else:
-                    webview_win_id = int(self.content_widget.web_view.winId())
-            except Exception:
-                try:
-                    webview_win_id = int(self.content_widget.web_view.winId())
-                except:
-                    pass
-
         try:
             if self._x11_lib is None:
                 self._x11_lib = ctypes.cdll.LoadLibrary("libX11.so.6")
@@ -237,15 +222,18 @@ class Sidebar(QMainWindow):
             self.raise_()
             self.activateWindow()
 
-            # Re-hook X11 Focus
+            # Re-hook X11 Focus to the TOP-LEVEL window (Sidebar itself)
+            # NEVER call winId() on child widgets like WebView to prevent Qt6 from creating
+            # conflicting native child windows, which causes "QWidgetWindow must be a top level window" errors.
             self._x11_lib.XSetInputFocus(display, win_id, 1, 0)
-            if webview_win_id != 0:
-                self._x11_lib.XSetInputFocus(display, webview_win_id, 1, 0)
+
+            # Direct Qt internal focus to the web_view safely
+            if self.content_widget and self.content_widget.web_view:
                 self.content_widget.web_view.setFocus()
 
             self._x11_lib.XSync(display, 0)
             self._x11_lib.XCloseDisplay(display)
-            logging.info(f"[FocusHook] Successfully grabbed X11 input focus (win_id: {win_id}, webview_id: {webview_win_id})")
+            logging.info(f"[FocusHook] Successfully grabbed X11 input focus for top-level Sidebar (win_id: {win_id})")
         except Exception as e:
             logging.error(f"X11 focus grab failed: {e}")
 
