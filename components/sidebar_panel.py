@@ -198,18 +198,23 @@ class SidebarPanel(QWidget):
             self.popup_windows.remove(popup)
         if not self.popup_windows:
             self.has_active_popup = False
-            # After the last popup closes, immediately hide sidebar if
-            # the cursor is outside — leaveEvent may have already fired
-            # while has_active_popup was True and was consumed by the guard.
-            if self.is_visible and not self.is_resizing:
-                global_pos = QCursor.pos()
-                local_pos = self.mapFromGlobal(global_pos)
-                margin = 50
-                rect = self.rect().adjusted(-margin, -margin, margin, margin)
-                if not rect.contains(local_pos):
-                    self.closeRequested.emit()
+            # Defer cursor check to next event loop iteration so the
+            # popup's closeEvent finishes before we potentially hide
+            # the sidebar (which triggers _on_sidebar_close → _hide_sidebar).
+            QTimer.singleShot(0, self._check_leave_after_popup)
 
     # ── menu state ─────────────────────────────────────────────────────
+
+    def _check_leave_after_popup(self):
+        """Hide sidebar if cursor is outside after last popup closes."""
+        if not self.is_visible or self.is_resizing:
+            return
+        global_pos = QCursor.pos()
+        local_pos = self.mapFromGlobal(global_pos)
+        margin = 50
+        rect = self.rect().adjusted(-margin, -margin, margin, margin)
+        if not rect.contains(local_pos):
+            self.closeRequested.emit()
 
     def on_nav_menu_state_changed(self, is_open):
         self.is_nav_menu_open = is_open
