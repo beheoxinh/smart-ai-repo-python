@@ -17,7 +17,7 @@ class FloatingButton(QWidget):
     Button position is NEVER affected by sidebar show/hide.
     """
 
-    SIZE = 64
+    SIZE = 40  # default 40x40
 
     def __init__(self, app):
         super().__init__()
@@ -57,7 +57,7 @@ class FloatingButton(QWidget):
         # ── alpha paint (Wayland-safe, no setWindowOpacity) ───────────────
         self._resting_alpha = 0.5  # saved opacity level (non-hovered)
         self._current_alpha = 0.5  # current paint alpha (0.0–1.0)
-        self._target_alpha = 0.5  # target for smooth animation (0.0–1.0)
+        self._target_alpha = 0.5   # target for smooth animation (0.0–1.0)
 
         # ── keyboard shortcut ─────────────────────────────────────────────
         self._shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
@@ -69,10 +69,14 @@ class FloatingButton(QWidget):
         self._anim_timer.start(16)
 
         # ── force native window, position, then show ──────────────────
-        self.winId()  # create native wl_surface + xdg-surface
-        self._load_settings()  # load ALL: opacity, size, position, sidebar dims
+        self.winId()                # create native wl_surface + xdg-surface
+        self._load_settings()       # load ALL: opacity, size, position, sidebar dims
         self.show()
         self.raise_()
+
+        # Re-apply opacity after GUI fully settles (1s)
+        QTimer.singleShot(1000, self._reapply_opacity)
+
         logging.info("[FloatingButton] Initialised")
 
     # ── lazy sidebar ───────────────────────────────────────────────────────
@@ -135,7 +139,15 @@ class FloatingButton(QWidget):
 
         painter.end()
 
-    # ── alpha helpers ───────────────────────────────────────────────────────
+    # ── helpers ────────────────────────────────────────────────────────────
+
+    def _reapply_opacity(self):
+        """Re-apply resting alpha after GUI has fully initialised."""
+        self._set_target_alpha(self._resting_alpha)
+        self._current_alpha = self._resting_alpha
+        self._target_alpha = self._resting_alpha
+        self.update()
+        logging.debug(f"[FloatingButton] Opacity re-applied: {self._resting_alpha:.2f}")
 
     def _set_target_alpha(self, ratio):
         """Set target alpha (0.0 = transparent, 1.0 = opaque)."""
@@ -314,11 +326,9 @@ class FloatingButton(QWidget):
             logging.warning(f"[FloatingButton] Invalid size {size} (valid: 32-128)")
             return
 
-        # Update SIZE constant
         self.SIZE = size
         self.setFixedSize(size, size)
 
-        # Reload and reposition to ensure proper placement
         self._load_position()
         self.update()
 
@@ -343,7 +353,6 @@ class FloatingButton(QWidget):
             self._load_position()
             self.show()
             self.raise_()
-            # Re-paint to ensure correct alpha
             self._set_target_alpha(self._resting_alpha)
             self.update()
 
@@ -359,47 +368,61 @@ class FloatingButton(QWidget):
         logging.info(f"[FloatingButton] Settings saved: {updates}")
 
     def _load_settings(self):
-        """Load ALL settings from button_pos.json: opacity, size, position, sidebar dims."""
+        """Load ALL settings from button_pos.json; write defaults if missing."""
         try:
             data = json.loads(self._paths.read('button_pos.json'))
+        except Exception:
+            data = {}  # file missing or corrupt → create with defaults
 
-            # ── opacity (0–100%) → resting alpha (0.0–1.0) ─────────
-            opacity = data.get('opacity', 50)
-            self._resting_alpha = opacity / 100.0
-            self._current_alpha = self._resting_alpha
-            self._target_alpha = self._resting_alpha
+        needs_save = False
 
-            # ── button icon size ────────────────────────────────────
-            size = data.get('size', 64)
-            if size != self.SIZE:
-                self.SIZE = size
-                self.setFixedSize(size, size)
+        # ── opacity (0–100%) → resting alpha (0.0–1.0) ─────────
+        opacity = data.get('opacity')
+        if opacity is None or not isinstance(opacity, (int, float)) or opacity < 0 or opacity > 100:
+            opacity = 50
+            data['opacity'] = opacity
+            needs_save = True
+        self._resting_alpha = opacity / 100.0
+        self._current_alpha = self._resting_alpha
+        self._target_alpha = self._resting_alpha
 
-            # ── sidebar dimensions ──────────────────────────────────
-            self._sidebar_w = data.get('sidebar_w', self._sidebar_w)
-            self._sidebar_h = data.get('sidebar_h', self._sidebar_h)
+        # ── button icon size ────────────────────────────────────
+        size = data.get('size')
+        if size is None or not isinstance(size, int) or size < 32 or size > 128:
+            size = 40
+            data['size'] = size
+            needs_save = True
+        if size != self.SIZE:
+            self.SIZE = size
+            self.setFixedSize(size, size)
 
-            # ── button position (with screen bounds check) ──────────
-            x, y = data.get('x', None), data.get('y', None)
-            if x is not None and y is not None:
-                test_rect = QRect(x, y, self.SIZE, self.SIZE)
-                on_screen = any(
-                    s.geometry().intersects(test_rect) for s in QApplication.screens()
-                )
-                if on_screen:
-                    self._move_to(x, y)
-                else:
-                    self._place_default()
+        # ── sidebar dimensions ──────────────────────────────────
+        self._sidebar_w = data.get('sidebar_w', self._sidebar_w)
+        self._sidebar_h = data.get('sidebar_h', self._sidebar_h)
+
+        # ── button position (with screen bounds check) ──────────
+        x, y = data.get('x', None), data.get('y', None)
+        if x is not None and y is not None:
+            test_rect = QRect(x, y, self.SIZE, self.SIZE)
+            on_screen = any(
+                s.geometry().intersects(test_rect) for s in QApplication.screens()
+            )
+            if on_screen:
+                self._move_to(x, y)
             else:
                 self._place_default()
-
-            logging.info(
-                f"[FloatingButton] Settings loaded: opacity={opacity}%, size={size}px, "
-                f"pos=({x},{y}), sidebar={self._sidebar_w}x{self._sidebar_h}"
-            )
-        except Exception as e:
-            logging.warning(f"[FloatingButton] Failed to load settings: {e}")
+        else:
             self._place_default()
+
+        # Save defaults to disk if any were just populated
+        if needs_save:
+            self._paths.write('button_pos.json', json.dumps(data, indent=2))
+            logging.info("[FloatingButton] Defaults written to button_pos.json")
+
+        logging.info(
+            f"[FloatingButton] Settings loaded: opacity={opacity}%, size={size}px, "
+            f"pos=({x},{y}), sidebar={self._sidebar_w}x{self._sidebar_h}"
+        )
 
     def get_opacity(self):
         """Get current opacity as percentage (0-100)."""
@@ -414,7 +437,6 @@ class FloatingButton(QWidget):
         return self.SIZE
 
     def _save_position(self):
-        # Merge with existing settings to preserve opacity/size
         try:
             existing = json.loads(self._paths.read('button_pos.json'))
         except Exception:
@@ -445,10 +467,8 @@ class FloatingButton(QWidget):
         try:
             with open(path) as f:
                 data = json.load(f)
-            # Restore sidebar dimensions
             self._sidebar_w = data.get('sidebar_w', self._sidebar_w)
             self._sidebar_h = data.get('sidebar_h', self._sidebar_h)
-            # Restore position with screen bounds check
             x, y = data.get('x', self.x()), data.get('y', self.y())
             test_rect = QRect(x, y, self.SIZE, self.SIZE)
             on_screen = any(
