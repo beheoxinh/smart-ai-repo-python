@@ -18,63 +18,64 @@ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
 )
 
 import logging
+import faulthandler
 
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from utils import AppPaths
 from components.floating_button import FloatingButton
-import faulthandler
 
 faulthandler.enable()
 
-log_format = '%(asctime)s - %(levelname)s - %(message)s'
-logging.basicConfig(level=logging.INFO, format=log_format, stream=sys.stdout)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    stream=sys.stdout,
+)
 
 
 def show_critical_error(message):
-    """A simple, dependency-free error popup for critical failures."""
     from PyQt6.QtWidgets import QMessageBox
     if not QApplication.instance():
         _ = QApplication(sys.argv)
-    msg_box = QMessageBox()
-    msg_box.setIcon(QMessageBox.Icon.Critical)
-    msg_box.setText("Critical Application Error")
-    msg_box.setInformativeText(str(message))
-    msg_box.setWindowTitle("Error")
-    msg_box.exec()
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Icon.Critical)
+    msg.setText("Critical Application Error")
+    msg.setInformativeText(str(message))
+    msg.setWindowTitle("Error")
+    msg.exec()
 
 
 def main():
     try:
         app = QApplication(sys.argv)
         app.setDesktopFileName("smart-ai")
-
         paths = AppPaths()
+
+        # ── tray icon ─────────────────────────────────────────────────────
         icon_path = paths.get_path('images', 'tray.svg')
         if not os.path.exists(icon_path):
             raise FileNotFoundError(f"Icon file not found: {icon_path}")
-
         icon = QIcon(icon_path)
         if icon.isNull():
-            raise Exception("Failed to load icon, it might be corrupted.")
+            raise Exception("Failed to load icon")
 
-        # ── Entry point: floating button owns the sidebar internally ──
-        floating_btn = FloatingButton(app)
-
-        # ── System tray ──────────────────────────────────────────────
         tray_icon = QSystemTrayIcon(icon, parent=app)
         tray_menu = QMenu()
 
-        show_action = QAction("Show / Hide Sidebar")
-        show_action.triggered.connect(floating_btn._toggle_sidebar)
+        # ── floating button (creates its own window + lazy sidebar) ────────
+        btn = FloatingButton(app)
+
+        show_action = QAction("Show/Hide")
+        show_action.triggered.connect(btn.toggle_sidebar)
         tray_menu.addAction(show_action)
 
         tray_menu.addSeparator()
 
-        exit_action = QAction("Quit")
-        exit_action.triggered.connect(app.quit)
-        tray_menu.addAction(exit_action)
+        quit_action = QAction("Quit")
+        quit_action.triggered.connect(app.quit)
+        tray_menu.addAction(quit_action)
 
         tray_icon.setContextMenu(tray_menu)
         tray_icon.show()
@@ -82,9 +83,11 @@ def main():
         return app.exec()
 
     except Exception as e:
-        error_message = f"A fatal error occurred during application startup:\n\n{str(e)}"
-        logging.critical(error_message, exc_info=True)
-        show_critical_error(error_message)
+        error_msg = (
+            f"A fatal error occurred during startup:\n\n{str(e)}"
+        )
+        logging.critical(error_msg, exc_info=True)
+        show_critical_error(error_msg)
         return 1
 
 

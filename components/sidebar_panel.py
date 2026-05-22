@@ -56,6 +56,8 @@ class SidebarPanel(QWidget):
         # Resize handle on the LEFT (between button and sidebar content)
         self.resize_handle = ResizeHandle(self)
         self.resize_handle.dragResized.connect(self._on_resize_drag)
+        self.resize_handle.dragStarted.connect(lambda: setattr(self, 'is_resizing', True))
+        self.resize_handle.dragFinished.connect(lambda: setattr(self, 'is_resizing', False))
         layout.addWidget(self.resize_handle)
 
         # Main content area
