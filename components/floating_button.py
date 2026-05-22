@@ -55,8 +55,8 @@ class FloatingButton(QWidget):
         self._hovered = False
 
         # ── alpha paint (Wayland-safe, no setWindowOpacity) ───────────────
-        self._current_alpha = 160
-        self._target_alpha = 160
+        self._current_alpha = 0.5  # Default 50% opacity
+        self._target_alpha = 0.5
 
         # ── keyboard shortcut ─────────────────────────────────────────────
         self._shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
@@ -110,7 +110,7 @@ class FloatingButton(QWidget):
 
         # Background circle
         if self._hovered or self._dragging:
-            base = QColor(60, 120, 240, min(alpha + 40, 255))
+            base = QColor(70, 70, 78, min(alpha + 40, 255))  # Lighter gray on hover
         else:
             base = QColor(45, 45, 52, alpha)
         painter.setBrush(QBrush(base))
