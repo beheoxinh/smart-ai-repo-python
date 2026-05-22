@@ -10,7 +10,7 @@ from utils import AppPaths
 
 
 class FloatingButton(QWidget):
-    """Floating AI button — entry point widget.
+    """Floating AI button -- entry point widget.
 
     Always-on-top, draggable, semi-transparent.
     Creates and manages the sidebar internally.
