@@ -73,11 +73,18 @@ class FloatingButton(QWidget):
         self._anim_timer.start(16)
 
         # ---- workspace tracking (GNOME Wayland) ----
-        self._last_paint_time = time.time()
+        # activeChanged detects focus loss (workspace switch or
+        # user clicks another window).  If focus doesn't return
+        # within 3 s, we force a re-show to move the button to
+        # the current workspace.
         self._ws_reapply_debounce = 0.0
+        self._ws_lost_active_at = 0.0
         self._ws_timer = QTimer(self)
         self._ws_timer.timeout.connect(self._check_workspace)
-        self._ws_timer.start(2000)
+        self._ws_timer.start(1500)
+        wh = self.windowHandle()
+        if wh:
+            wh.activeChanged.connect(self._on_ws_active_changed)
 
         # ── force native window, position, then show ──────────────────
         self.winId()  # create native wl_surface + xdg-surface
@@ -112,7 +119,6 @@ class FloatingButton(QWidget):
     # ── paint ──────────────────────────────────────────────────────────────
 
     def paintEvent(self, event):
-        self._last_paint_time = time.time()
         alpha = min(255, max(0, int(self._current_alpha * 255)))
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -202,13 +208,6 @@ class FloatingButton(QWidget):
             # Restore to resting alpha (hover re-applies 1.0 via enterEvent)
             self._set_target_alpha(self._resting_alpha)
             self.update()
-
-    # ── hover ───────────────────────────────────────────────────────────────
-
-    def enterEvent(self, event):
-        self._hovered = True
-        self._set_target_alpha(1.0)
-        self.update()
 
     def leaveEvent(self, event):
         self._hovered = False
@@ -468,13 +467,28 @@ class FloatingButton(QWidget):
 
     # ---- workspace tracking ----
 
+    def _on_ws_active_changed(self):
+        """Window focus changed — might be workspace switch or just
+        user clicking another window on the same workspace.
+        Record the timestamp so _check_workspace can act."""
+        wh = self.windowHandle()
+        if wh and not wh.isActive() and self.isVisible():
+            self._ws_lost_active_at = time.time()
+        elif wh and wh.isActive():
+            self._ws_lost_active_at = 0.0
+
     def _check_workspace(self):
+        """If window lost activation (workspace switch) and cursor
+        has not re-entered the widget, re-show on the current workspace."""
         if not self.isVisible():
             return
+        if self._ws_lost_active_at == 0.0:
+            return
         now = time.time()
-        if now - self._last_paint_time > 5.0:
+        if now - self._ws_lost_active_at > 3.0:
             if now - self._ws_reapply_debounce > 4.0:
                 self._ws_reapply_debounce = now
+                self._ws_lost_active_at = 0.0
                 self._reapply_workspace()
 
     def _reapply_workspace(self):
@@ -484,6 +498,13 @@ class FloatingButton(QWidget):
     def _reshow_workspace(self):
         self.show()
         self.raise_()
+
+    def enterEvent(self, event):
+        """Cancel workspace re-apply if cursor re-enters (same workspace)."""
+        self._ws_lost_active_at = 0.0
+        self._hovered = True
+        self._set_target_alpha(1.0)
+        self.update()
 
     def _load_position(self):
         """Reload position + sidebar dims from button_pos.json.
