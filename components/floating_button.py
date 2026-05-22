@@ -52,18 +52,18 @@ class FloatingButton(QWidget):
         self._show_red_border = True
 
         # opacity via alpha paint (Wayland-safe)
-        self._current_alpha = 160  # ~63 %
+        self._current_alpha = 160
         self._target_alpha = 160
 
         self._move_to_center()
 
-        center = self.geometry().center()
-        screen = QApplication.screenAt(center)
-        logging.info(
-            f"[FloatingButton] Position at ({self.x()}, {self.y()}), "
-            f"center ({center.x()}, {center.y()}), "
-            f"screen: {screen.name() if screen else 'NONE'}"
-        )
+        wh = self.windowHandle()
+        if wh is not None:
+            screen = wh.screen()
+            logging.info(
+                f"[FloatingButton] Position at ({self.x()}, {self.y()}), "
+                f"screen: {screen.name() if screen else 'NONE'}"
+            )
 
         # alpha animation timer
         self._anim_timer = QTimer(self)
@@ -71,7 +71,6 @@ class FloatingButton(QWidget):
         self._anim_timer.start(16)
 
         # listen for screen changes (fires on Wayland after system move)
-        wh = self.windowHandle()
         if wh is not None:
             wh.screenChanged.connect(self._on_screen_changed)
 
@@ -168,15 +167,14 @@ class FloatingButton(QWidget):
 
     def mouseMoveEvent(self, event):
         if (
-                event.buttons() & Qt.MouseButton.LeftButton
-                and self._potential_drag
-                and not self._system_moving
+            event.buttons() & Qt.MouseButton.LeftButton
+            and self._potential_drag
+            and not self._system_moving
         ):
             delta = (
-                    event.globalPosition().toPoint() - self._press_pos
+                event.globalPosition().toPoint() - self._press_pos
             ).manhattanLength()
             if delta > 8:
-                # Use compositor move (works on Wayland + X11 via xdg-shell)
                 wh = self.windowHandle()
                 if wh is not None:
                     wh.startSystemMove()
@@ -186,27 +184,23 @@ class FloatingButton(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             if self._potential_drag:
-                # was a click, not a drag -- sync screen before showing sidebar
+                # click -- sync screen then toggle sidebar
                 self._potential_drag = False
                 self._update_target_screen()
                 self.sidebar.toggle_sidebar()
             elif self._system_moving:
-                # system move just finished -- update target
+                # system move finished
                 self._system_moving = False
-                self._clamp_to_screen()
                 self._update_target_screen()
                 self._save_position()
-
         self._potential_drag = False
         self._system_moving = False
         self._set_target_alpha(0.85 if self._hovered else 0.63)
         self.update()
 
     def _on_screen_changed(self, screen):
-        """Called by QWindow when the window moves to a different output."""
         if screen:
             logging.info(f"[FloatingButton] Screen changed to: {screen.name()}")
-            # The move is in progress or just finished; update sidebar target
             if self._system_moving:
                 self._update_target_screen()
 
@@ -223,13 +217,15 @@ class FloatingButton(QWidget):
             self._set_target_alpha(0.63)
         self.update()
 
-    # -- screen logic ----------------------------------------------------------
+    # -- screen logic (uses windowHandle().screen() for Wayland accuracy) ------
 
     def _update_target_screen(self):
-        center = self.geometry().center()
-        screen = QApplication.screenAt(center)
+        """Set sidebar target to the screen the floating button is actually on."""
+        wh = self.windowHandle()
+        if wh is None:
+            return
+        screen = wh.screen()
         if not screen:
-            logging.warning("[FloatingButton] No screen found at centre")
             return
         screens = QApplication.screens()
         for i, s in enumerate(screens):
@@ -243,8 +239,11 @@ class FloatingButton(QWidget):
                 break
 
     def _clamp_to_screen(self):
-        center = self.geometry().center()
-        screen = QApplication.screenAt(center)
+        """Keep button fully visible on its current screen."""
+        wh = self.windowHandle()
+        if wh is None:
+            return
+        screen = wh.screen()
         if not screen:
             return
         g = screen.geometry()
@@ -283,8 +282,8 @@ class FloatingButton(QWidget):
                 data = json.load(f)
             x, y = data.get('x', 0), data.get('y', 0)
             if any(
-                    s.geometry().intersects(QRect(x, y, self.SIZE, self.SIZE))
-                    for s in QApplication.screens()
+                s.geometry().intersects(QRect(x, y, self.SIZE, self.SIZE))
+                for s in QApplication.screens()
             ):
                 self.move(x, y)
             else:
