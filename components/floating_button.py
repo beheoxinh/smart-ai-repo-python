@@ -168,12 +168,12 @@ class FloatingButton(QWidget):
 
     def mouseMoveEvent(self, event):
         if (
-            event.buttons() & Qt.MouseButton.LeftButton
-            and self._potential_drag
-            and not self._system_moving
+                event.buttons() & Qt.MouseButton.LeftButton
+                and self._potential_drag
+                and not self._system_moving
         ):
             delta = (
-                event.globalPosition().toPoint() - self._press_pos
+                    event.globalPosition().toPoint() - self._press_pos
             ).manhattanLength()
             if delta > 8:
                 # Use compositor move (works on Wayland + X11 via xdg-shell)
@@ -186,8 +186,9 @@ class FloatingButton(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             if self._potential_drag:
-                # was a click, not a drag
+                # was a click, not a drag -- sync screen before showing sidebar
                 self._potential_drag = False
+                self._update_target_screen()
                 self.sidebar.toggle_sidebar()
             elif self._system_moving:
                 # system move just finished -- update target
@@ -282,8 +283,8 @@ class FloatingButton(QWidget):
                 data = json.load(f)
             x, y = data.get('x', 0), data.get('y', 0)
             if any(
-                s.geometry().intersects(QRect(x, y, self.SIZE, self.SIZE))
-                for s in QApplication.screens()
+                    s.geometry().intersects(QRect(x, y, self.SIZE, self.SIZE))
+                    for s in QApplication.screens()
             ):
                 self.move(x, y)
             else:

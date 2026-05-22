@@ -2,12 +2,12 @@ import logging
 import time
 
 from PyQt6.QtCore import Qt, QTimer, QUrl, QEvent
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QApplication
 from PyQt6.QtGui import QShortcut, QKeySequence, QCursor
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QApplication
 
-from components.resize_handle import ResizeHandle
-from components.content_widget import ContentWidget
 from components.bottom_bar import BottomBar
+from components.content_widget import ContentWidget
+from components.resize_handle import ResizeHandle
 
 
 class Sidebar(QMainWindow):
@@ -86,9 +86,9 @@ class Sidebar(QMainWindow):
             return
         time_away = now - self.last_mouse_in_time
         if time_away > 2.0 and not (
-            self.has_active_popup
-            or self.is_nav_menu_open
-            or self.is_webview_menu_open
+                self.has_active_popup
+                or self.is_nav_menu_open
+                or self.is_webview_menu_open
         ):
             self.hide_sidebar(reason="watchdog")
 
@@ -245,7 +245,9 @@ class Sidebar(QMainWindow):
     def enterEvent(self, event):
         self.last_mouse_in_time = time.time()
 
-        if not self.is_visible:
+        # Only auto-detect screen when no manual screen is set
+        # (floating button controls manual screen selection)
+        if not self.is_visible and self.manual_screen_index < 0:
             cursor_pos = QCursor.pos()
             screen_with_mouse = QApplication.screenAt(cursor_pos)
             if screen_with_mouse and screen_with_mouse != self.active_screen:
@@ -300,9 +302,9 @@ class Sidebar(QMainWindow):
         if not self.is_visible or self.is_resizing:
             return
         if (
-            self.has_active_popup
-            or self.is_nav_menu_open
-            or self.is_webview_menu_open
+                self.has_active_popup
+                or self.is_nav_menu_open
+                or self.is_webview_menu_open
         ):
             return
         if (time.time() - self.last_show_time) < 0.5:
