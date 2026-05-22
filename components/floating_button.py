@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import time
 
 from PyQt6.QtCore import Qt, QPoint, QTimer, QRect
 from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QShortcut, QKeySequence
@@ -468,18 +467,20 @@ class FloatingButton(QWidget):
     # ---- workspace tracking ----
 
     def _reapply_workspace(self):
-        """Re-map window onto current GNOME workspace.
-        On Wayland, hide() + show() causes the compositor to
-        re-evaluate window workspace placement — Tool windows
-        without a transient parent go to the active workspace."""
+        """Re-assert window flags to trigger xdg-toplevel renegotiation
+        with the Wayland compositor.  This re-evaluates workspace
+        placement without unmapping/remapping the window, so there is
+        NO visible flicker."""
         if not self.isVisible() or self._sidebar_visible:
             return
-        self.hide()
-        QTimer.singleShot(50, self._reshow_workspace)
-
-    def _reshow_workspace(self):
-        self.show()
-        self.raise_()
+        # Re-setting the same flags triggers a configure cycle with the
+        # compositor (xdg_toplevel_set_always_on_top, etc.), moving the
+        # Tool window to the current workspace.
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
 
     def _load_position(self):
         """Reload position + sidebar dims from button_pos.json.
