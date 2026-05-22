@@ -107,24 +107,35 @@ def main():
         opacity_slider = QSlider(Qt.Orientation.Horizontal)
         opacity_slider.setMinimum(10)
         opacity_slider.setMaximum(100)
-        opacity_slider.setValue(50)
-        opacity_slider.setFixedWidth(150)
+        opacity_slider.setValue(btn.get_opacity())
+        opacity_slider.setFixedWidth(180)
+        opacity_slider.setMinimumHeight(24)
         opacity_slider.setStyleSheet("""
+            QSlider {
+                min-height: 24px;
+            }
             QSlider::groove:horizontal {
-                background: #ddd;
-                height: 6px;
-                border-radius: 3px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #B1B1B1, stop:1 #c4c4c4);
+                height: 8px;
+                border-radius: 4px;
+                border: 1px solid #5c5c5c;
             }
             QSlider::handle:horizontal {
-                background: #0078d4;
-                border: 1px solid #005a9e;
-                width: 14px;
-                height: 14px;
-                margin: -5px 0;
-                border-radius: 7px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #e0e0e0, stop:1 #b0b0b0);
+                border: 1px solid #5c5c5c;
+                width: 18px;
+                margin: -6px 0;
+                border-radius: 9px;
             }
             QSlider::handle:horizontal:hover {
-                background: #1e90ff;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #ffffff, stop:1 #c0c0c0);
+            }
+            QSlider::handle:horizontal:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #c0c0c0, stop:1 #909090);
             }
         """)
         opacity_slider.valueChanged.connect(btn.set_opacity)

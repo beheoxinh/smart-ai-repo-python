@@ -68,6 +68,7 @@ class FloatingButton(QWidget):
         # ── force native window, position, then show ──────────────────
         self.winId()                # create native wl_surface + xdg-surface
         self._load_position()       # set geometry via QWindow.setGeometry
+        self._load_settings()       # restore opacity + size
         self.show()
         self.raise_()
         logging.info("[FloatingButton] Initialised")
@@ -298,6 +299,7 @@ class FloatingButton(QWidget):
         alpha = alpha_percent / 100.0
         self._set_target_alpha(alpha)
         self.update()
+        self._save_settings({'opacity': alpha_percent})
         logging.info(f"[FloatingButton] Opacity set to {alpha_percent}%")
 
     def set_size(self, size):
@@ -318,6 +320,7 @@ class FloatingButton(QWidget):
         self._load_position()
         self.update()
         
+        self._save_settings({'size': size})
         logging.info(f"[FloatingButton] Size changed to {size}px")
 
     def toggle_button(self):
@@ -341,6 +344,51 @@ class FloatingButton(QWidget):
             # Re-paint to ensure correct alpha
             self._set_target_alpha(0.50)
             self.update()
+
+    def _save_settings(self, updates):
+        """Update settings in button_pos.json (merge with existing data)."""
+        try:
+            existing = json.loads(self._paths.read('button_pos.json'))
+        except Exception:
+            existing = {}
+        
+        existing.update(updates)
+        self._paths.write('button_pos.json', json.dumps(existing, indent=2))
+        logging.info(f"[FloatingButton] Settings saved: {updates}")
+
+    def _load_settings(self):
+        """Load opacity and size from button_pos.json."""
+        try:
+            data = json.loads(self._paths.read('button_pos.json'))
+            
+            # Load opacity (default 50%)
+            opacity = data.get('opacity', 50)
+            alpha = opacity / 100.0
+            self._set_target_alpha(alpha)
+            
+            # Load size (default 64)
+            size = data.get('size', 64)
+            if size != self.SIZE:
+                self.SIZE = size
+                self.setFixedSize(size, size)
+            
+            logging.info(f"[FloatingButton] Settings loaded: opacity={opacity}%, size={size}px")
+            return opacity, size
+        except Exception as e:
+            logging.warning(f"[FloatingButton] Failed to load settings: {e}")
+            return 50, 64
+
+    def get_opacity(self):
+        """Get current opacity as percentage (0-100)."""
+        try:
+            data = json.loads(self._paths.read('button_pos.json'))
+            return data.get('opacity', 50)
+        except Exception:
+            return 50
+
+    def get_size(self):
+        """Get current button size in pixels."""
+        return self.SIZE
 
     def _save_position(self):
         data = {
