@@ -288,7 +288,12 @@ class FloatingButton(QWidget):
         return os.path.join(self._paths.get_data_dir(), 'button_pos.json')
 
     def _save_position(self):
-        data = {'x': self.x(), 'y': self.y()}
+        data = {
+            'x': self.x(),
+            'y': self.y(),
+            'sidebar_w': self._sidebar_w,
+            'sidebar_h': self._sidebar_h,
+        }
         try:
             with open(self._get_pos_file(), 'w') as f:
                 json.dump(data, f)
@@ -312,6 +317,9 @@ class FloatingButton(QWidget):
                 self.move(x, y)
             else:
                 raise ValueError("off-screen")
+            # Restore sidebar dimensions (0 = use defaults on first show)
+            self._sidebar_w = data.get('sidebar_w', 0)
+            self._sidebar_h = data.get('sidebar_h', 0)
         except Exception:
             self._place_default()
 

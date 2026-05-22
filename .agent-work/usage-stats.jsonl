@@ -138,3 +138,4 @@
 {"timestamp":"2026-05-22T08:02:04.597245900Z","prompt":"thôi được cũng ngon. nó hiện ngay ra ở chỗ cái button icon cũng tốt, nhưng vấn đề là kích thước mặc định nhỏ quá nó nên là 2/3 độ cao màn hình hiện tại và rộng 1/2 màn hình hiện tại. cũng như nó luôn ","model":"opencode/big-pickle","toolCalls":6}
 {"timestamp":"2026-05-22T08:12:13.736937039Z","prompt":"ê cho phép resize sidebar cả sang trái và xuống dưới được không?","model":"opencode/big-pickle","toolCalls":12}
 {"timestamp":"2026-05-22T08:16:28.578018959Z","prompt":"cái resize sang trái đang bị lỗi mày à","model":"opencode/big-pickle","toolCalls":4}
+{"timestamp":"2026-05-22T08:20:18.024664766Z","prompt":"thế đéo nào kéo sang trái mà nó giãn rộng sagn phải thế là thế nào?","model":"opencode/big-pickle","toolCalls":10}
