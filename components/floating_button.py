@@ -60,13 +60,13 @@ class FloatingButton(QWidget):
         self._shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
         self._shortcut.activated.connect(self._toggle_sidebar)
 
-        # ── position from persistence ─────────────────────────────────────
-        self._load_position()
-
         # ── alpha animation timer ─────────────────────────────────────────
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._tick_alpha)
         self._anim_timer.start(16)
+
+        # ── position from persistence (BEFORE show — Wayland honors pre-map) ──
+        self._load_position()
 
         self.show()
         self.raise_()
