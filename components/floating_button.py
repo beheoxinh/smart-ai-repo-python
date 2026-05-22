@@ -85,6 +85,10 @@ class FloatingButton(QWidget):
             self._sidebar.resizeRequested.connect(self._on_sidebar_resize)
             self._sidebar.resizeHeightRequested.connect(self._on_sidebar_height_resize)
             self._sidebar.closeRequested.connect(self._on_sidebar_close)
+            # Direct bypass: nav_bar close button → FloatingButton
+            self._sidebar.content_widget.nav_bar.closeClicked.connect(
+                self._on_sidebar_close
+            )
         return self._sidebar
 
     # ── paint ──────────────────────────────────────────────────────────────
@@ -203,46 +207,39 @@ class FloatingButton(QWidget):
         self._toggle_sidebar()
 
     def _show_sidebar(self):
-        """Show sidebar at right edge of screen, vertically centered on button.
+        """Show sidebar as an independent window — button position NEVER changes.
 
-        Default size: 1/2 screen width × 2/3 screen height on first show;
-        preserves custom size after user resize.
-        Uses Qt parent + setTransientParent + geometry-before-show for Wayland.
+        Like CSS position: absolute — sidebar appears at the button's right
+        edge (same Y) but does NOT push or move the button.
+        Default size: 1/2 screen width × 2/3 screen height on first show.
         """
         self._sidebar_visible = True
         sidebar = self._get_sidebar()
 
-        # Find the screen the button is on
         screen = QApplication.screenAt(self.geometry().center())
         if screen:
             sg = screen.geometry()
             sidebar_w = self._sidebar_w or sg.width() // 2
             sidebar_h = self._sidebar_h or int(sg.height() * 2 / 3)
 
-            # Sidebar flush against right edge
-            sx = sg.x() + sg.width() - sidebar_w
-            # Vertically CENTERED on the button
+            # Position: right of button, same Y
+            sx = self.x() + self.SIZE
+            sy = self.y()
+            # Clamp horizontal so sidebar stays on-screen
+            min_sx = sg.x()
+            max_sx = sg.x() + sg.width() - sidebar_w
+            sx = max(min_sx, min(sx, max_sx))
+            # Vertical center on button (clamped to screen)
             btn_center_y = self.y() + self.SIZE // 2
             sy = btn_center_y - sidebar_h // 2
-            # Clamp to stay on-screen
             sy = max(sg.y(), min(sy, sg.y() + sg.height() - sidebar_h))
-
-            # Move button to the left of sidebar
-            btn_x = sx - self.SIZE
-            wh = self.windowHandle()
-            if wh is not None:
-                wh.setGeometry(QRect(btn_x, self.y(), self.SIZE, self.SIZE))
-            else:
-                self.move(btn_x, self.y())
-            self._save_position()
         else:
-            # Fallback: right of button with previous size or defaults
             sidebar_w = self._sidebar_w or 500
             sidebar_h = self._sidebar_h or 500
             sx = self.x() + self.SIZE
             sy = self.y()
 
-        # Force native handle + transient parent for Wayland positioning
+        # Force native handle + transient parent for positioning
         sidebar.winId()
         sidebar_wh = sidebar.windowHandle()
         btn_wh = self.windowHandle()
@@ -256,7 +253,7 @@ class FloatingButton(QWidget):
 
         logging.info(
             f"[FloatingButton] Sidebar {sidebar_w}x{sidebar_h} "
-            f"at ({sx},{sy}) — button at ({self.x()},{self.y()})"
+            f"at ({sx},{sy}) — button UNCHANGED at ({self.x()},{self.y()})"
         )
 
     def _hide_sidebar(self):
@@ -268,16 +265,13 @@ class FloatingButton(QWidget):
         logging.info("[FloatingButton] Sidebar hidden")
 
     def _on_sidebar_close(self):
+        logging.info("[FloatingButton] closeRequested received — hiding sidebar")
         self._hide_sidebar()
 
     def _on_sidebar_resize(self, new_w):
         self._sidebar_w = new_w
         if self._sidebar is not None:
             self._sidebar.setFixedWidth(new_w)
-            # Move button to maintain position at sidebar's right edge
-            btn_x = self._sidebar.x() + new_w
-            self.move(btn_x, self.y())
-            self._save_position()
 
     def _on_sidebar_height_resize(self, new_h):
         self._sidebar_h = new_h
