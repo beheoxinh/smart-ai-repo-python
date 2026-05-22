@@ -467,20 +467,19 @@ class FloatingButton(QWidget):
     # ---- workspace tracking ----
 
     def _reapply_workspace(self):
-        """Re-assert window flags to trigger xdg-toplevel renegotiation
-        with the Wayland compositor.  This re-evaluates workspace
-        placement without unmapping/remapping the window, so there is
-        NO visible flicker."""
+        """Force re-map on the current GNOME workspace.
+
+        hide() + show() triggers a full xdg-toplevel map cycle, which
+        makes the compositor place the Tool window on the current (active)
+        workspace.  Crucially, both calls happen in the SAME event-loop
+        iteration — the Wayland protocol sends unmap + map in a single
+        socket batch, so the compositor processes both before rendering
+        the next frame.  Result: zero visible flicker."""
         if not self.isVisible() or self._sidebar_visible:
             return
-        # Re-setting the same flags triggers a configure cycle with the
-        # compositor (xdg_toplevel_set_always_on_top, etc.), moving the
-        # Tool window to the current workspace.
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
-        )
+        self.hide()
+        self.show()
+        self.raise_()
 
     def _load_position(self):
         """Reload position + sidebar dims from button_pos.json.
