@@ -397,17 +397,23 @@ class FloatingButton(QWidget):
         return self.SIZE
 
     def _save_position(self):
-        data = {
+        # Merge with existing settings to preserve opacity/size
+        try:
+            existing = json.loads(self._paths.read('button_pos.json'))
+        except Exception:
+            existing = {}
+        
+        existing.update({
             'x': self.x(),
             'y': self.y(),
             'sidebar_w': self._sidebar_w,
             'sidebar_h': self._sidebar_h,
-        }
+        })
+        
         try:
-            with open(self._get_pos_file(), 'w') as f:
-                json.dump(data, f)
+            self._paths.write('button_pos.json', json.dumps(existing, indent=2))
         except Exception as e:
-            logging.error(f"[FloatingButton] Save failed: {e}")
+            logging.error(f"[FloatingButton] Save position failed: {e}")
 
     def _load_position(self):
         path = self._get_pos_file()
