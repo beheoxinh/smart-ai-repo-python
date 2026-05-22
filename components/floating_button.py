@@ -87,10 +87,24 @@ class FloatingButton(QWidget):
         self._load_settings()  # restore opacity + size from settings
         self.show()
         self.raise_()
+        # Opacity needs a short delay after show() to take effect on XCB/Wayland
+        QTimer.singleShot(500, self._reapply_opacity)
         logging.info(
             f"[FloatingButton] Button shown: opacity={self._resting_alpha:.0%}, "
             f"size={self.SIZE}px, pos=({self.x()},{self.y()})"
         )
+
+    # ── re-apply opacity after show ─────────────────────────────────────────
+
+    def _reapply_opacity(self):
+        """Re-set resting alpha after the window has fully mapped.
+
+        On XCB/Wayland, show() can reset window visuals; this short-delayed
+        call ensures the saved opacity is re-applied after the compositor
+        finishes its initial frame."""
+        self._current_alpha = self._resting_alpha
+        self._target_alpha = self._resting_alpha
+        self.update()
 
     # ── manual refresh ─────────────────────────────────────────────────────
 
