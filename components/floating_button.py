@@ -55,8 +55,9 @@ class FloatingButton(QWidget):
         self._hovered = False
 
         # ── alpha paint (Wayland-safe, no setWindowOpacity) ───────────────
-        self._current_alpha = 0.5  # Default 50% opacity
-        self._target_alpha = 0.5
+        self._resting_alpha = 0.5  # saved opacity level (non-hovered), 0.0–1.0
+        self._current_alpha = 0.5  # current paint alpha (0.0–1.0)
+        self._target_alpha = 0.5  # target for smooth animation (0.0–1.0)
 
         # ── keyboard shortcut ─────────────────────────────────────────────
         self._shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
@@ -68,7 +69,7 @@ class FloatingButton(QWidget):
         self._anim_timer.start(16)
 
         # ── force native window, then show (loads settings + position) ────
-        self.winId()  # create native wl_surface + xdg-surface
+        self.winId()                # create native wl_surface + xdg-surface
         self._show_button()
 
         # ── workspace tracking ─────────────────────────────────────────────
@@ -84,36 +85,41 @@ class FloatingButton(QWidget):
     # ── unified show method (always respects saved settings) ───────────────
 
     def _show_button(self):
-        """Show the button icon with saved opacity, size, and position from settings.
+        """Show the button with saved opacity, size, and position.
 
-        This is the ONE place that controls how the button appears.
-        Every code path that needs to show the button MUST call this method
-        to guarantee opacity / size / position are always loaded from config.
+        Central entry point — every code path that needs to display the
+        button icon MUST call this method to guarantee opacity/size/position
+        are loaded from config.
         """
-        self._load_position()  # restore saved position (x, y)
-        self._load_settings()  # restore opacity + size from settings
+        self._load_position()       # restore saved position (x, y)
+        self._load_settings()       # restore opacity + size from settings
         self.show()
         self.raise_()
         logging.info(
-            f"[FloatingButton] Button shown: opacity={self._current_alpha:.0%}, "
+            f"[FloatingButton] Button shown: opacity={self._resting_alpha:.0%}, "
             f"size={self.SIZE}px, pos=({self.x()},{self.y()})"
         )
 
     # ── workspace re-apply ──────────────────────────────────────────────────
 
     def _reapply_workspace(self):
-        """Force re-map on the current GNOME workspace.
+        """Re-map window on the current GNOME workspace — no flicker.
 
-        hide() + show() triggers a full xdg-toplevel map cycle, which
-        makes the compositor place the Window on the current (active)
-        workspace.  Uses _show_button() to ensure opacity/size stay correct
-        after the compositor resets window state.
+        hide() + show() + raise_() in the SAME event-loop iteration makes
+        the compositor process unmap+map in a single frame batch, so there
+        is zero visible flicker.  We bypass _show_button() (which does file
+        I/O) and instead directly restore _resting_alpha after show().
         """
         if not self.isVisible() or self._sidebar_visible:
             return
         self._hovered = False
         self.hide()
-        self._show_button()
+        self.show()
+        self.raise_()
+        # show() resets window — re-apply saved opacity immediately
+        self._current_alpha = self._resting_alpha
+        self._target_alpha = self._resting_alpha
+        self.update()
 
     # ── lazy sidebar ───────────────────────────────────────────────────────
 
@@ -217,20 +223,21 @@ class FloatingButton(QWidget):
                 self._save_position()
             else:
                 self._toggle_sidebar()
-            self._set_target_alpha(0.70 if self._hovered else 0.50)
+            # Restore to resting alpha (hover re-applies its own alpha via enterEvent)
+            self._set_target_alpha(self._resting_alpha)
             self.update()
 
     # ── hover ───────────────────────────────────────────────────────────────
 
     def enterEvent(self, event):
         self._hovered = True
-        self._set_target_alpha(0.85)
+        self._set_target_alpha(1.0)
         self.update()
 
     def leaveEvent(self, event):
         self._hovered = False
         if not self._dragging:
-            self._set_target_alpha(0.50)
+            self._set_target_alpha(self._resting_alpha)
         self.update()
 
     # ── sidebar toggle ─────────────────────────────────────────────────────
@@ -335,11 +342,13 @@ class FloatingButton(QWidget):
     def set_opacity(self, alpha_percent):
         """Set button opacity (0-100).
 
+        Updates resting alpha (used when not hovered) and saves to JSON.
+
         Args:
             alpha_percent: Opacity percentage (0 = fully transparent, 100 = opaque)
         """
         alpha = alpha_percent / 100.0
-        # Set both current and target for immediate effect
+        self._resting_alpha = alpha
         self._current_alpha = alpha
         self._target_alpha = alpha
         self.update()
@@ -397,27 +406,38 @@ class FloatingButton(QWidget):
         logging.info(f"[FloatingButton] Settings saved: {updates}")
 
     def _load_settings(self):
-        """Load opacity and size from button_pos.json."""
+        """Load ALL settings from button_pos.json; write defaults if missing."""
         try:
             data = json.loads(self._paths.read('button_pos.json'))
+        except Exception:
+            data = {}
 
-            # Load opacity (default 50%)
-            opacity = data.get('opacity', 50)
-            alpha = opacity / 100.0
-            self._current_alpha = alpha
-            self._target_alpha = alpha
+        needs_save = False
 
-            # Load size (default 64)
-            size = data.get('size', 64)
-            if size != self.SIZE:
-                self.SIZE = size
-                self.setFixedSize(size, size)
+        # ── opacity (0–100%) → resting alpha (0.0–1.0) ─────────
+        opacity = data.get('opacity', 50)
+        alpha = opacity / 100.0
+        self._resting_alpha = alpha
+        self._current_alpha = alpha
+        self._target_alpha = alpha
 
-            logging.info(f"[FloatingButton] Settings loaded: opacity={opacity}%, size={size}px")
-            return opacity, size
-        except Exception as e:
-            logging.warning(f"[FloatingButton] Failed to load settings: {e}")
-            return 50, 64
+        # ── button icon size ────────────────────────────────────
+        size = data.get('size', 64)
+        if size != self.SIZE:
+            self.SIZE = size
+            self.setFixedSize(size, size)
+
+        # ── sidebar dimensions ──────────────────────────────────
+        self._sidebar_w = data.get('sidebar_w', self._sidebar_w)
+        self._sidebar_h = data.get('sidebar_h', self._sidebar_h)
+
+        # Save defaults to disk if any were just populated
+        if needs_save:
+            self._paths.write('button_pos.json', json.dumps(data, indent=2))
+            logging.info("[FloatingButton] Defaults written to button_pos.json")
+
+        logging.info(f"[FloatingButton] Settings loaded: opacity={opacity}%, size={size}px")
+        return opacity, size
 
     def get_opacity(self):
         """Get current opacity as percentage (0-100)."""
