@@ -28,8 +28,12 @@ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
 import logging
 import faulthandler
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QIcon
-from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+from PyQt6.QtWidgets import (
+    QApplication, QSystemTrayIcon, QMenu, QSlider, QWidgetAction,
+    QWidget, QLabel, QHBoxLayout
+)
 
 from utils import AppPaths
 from components.floating_button import FloatingButton
@@ -78,6 +82,50 @@ def main():
         show_action = QAction("Show/Hide Button")
         show_action.triggered.connect(btn.toggle_button)
         tray_menu.addAction(show_action)
+
+        tray_menu.addSeparator()
+
+        # ── opacity slider ────────────────────────────────────────────────
+        opacity_widget = QWidget()
+        opacity_layout = QHBoxLayout(opacity_widget)
+        opacity_layout.setContentsMargins(10, 5, 10, 5)
+
+        opacity_label = QLabel("Opacity:")
+        opacity_layout.addWidget(opacity_label)
+
+        opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        opacity_slider.setMinimum(10)
+        opacity_slider.setMaximum(100)
+        opacity_slider.setValue(50)
+        opacity_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        opacity_slider.setTickInterval(10)
+        opacity_slider.valueChanged.connect(btn.set_opacity)
+        opacity_layout.addWidget(opacity_slider)
+
+        opacity_action = QWidgetAction(tray_menu)
+        opacity_action.setDefaultWidget(opacity_widget)
+        tray_menu.addAction(opacity_action)
+
+        # ── button size submenu ───────────────────────────────────────────
+        size_menu = QMenu("Button Size", tray_menu)
+
+        size_48 = QAction("Small (48px)")
+        size_48.triggered.connect(lambda: btn.set_size(48))
+        size_menu.addAction(size_48)
+
+        size_64 = QAction("Medium (64px) ✓")
+        size_64.triggered.connect(lambda: btn.set_size(64))
+        size_menu.addAction(size_64)
+
+        size_80 = QAction("Large (80px)")
+        size_80.triggered.connect(lambda: btn.set_size(80))
+        size_menu.addAction(size_80)
+
+        size_96 = QAction("Extra Large (96px)")
+        size_96.triggered.connect(lambda: btn.set_size(96))
+        size_menu.addAction(size_96)
+
+        tray_menu.addMenu(size_menu)
 
         tray_menu.addSeparator()
 

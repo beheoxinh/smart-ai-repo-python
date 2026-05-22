@@ -289,6 +289,37 @@ class FloatingButton(QWidget):
     def _get_pos_file(self):
         return os.path.join(self._paths.get_data_dir(), 'button_pos.json')
 
+    def set_opacity(self, alpha_percent):
+        """Set button opacity (0-100).
+
+        Args:
+            alpha_percent: Opacity percentage (0 = fully transparent, 100 = opaque)
+        """
+        alpha = alpha_percent / 100.0
+        self._set_target_alpha(alpha)
+        self.update()
+        logging.info(f"[FloatingButton] Opacity set to {alpha_percent}%")
+
+    def set_size(self, size):
+        """Change button size.
+
+        Args:
+            size: New size in pixels (e.g., 48, 64, 96)
+        """
+        if size < 32 or size > 128:
+            logging.warning(f"[FloatingButton] Invalid size {size} (valid: 32-128)")
+            return
+        
+        # Update SIZE constant
+        self.SIZE = size
+        self.setFixedSize(size, size)
+        
+        # Reload and reposition to ensure proper placement
+        self._load_position()
+        self.update()
+        
+        logging.info(f"[FloatingButton] Size changed to {size}px")
+
     def toggle_button(self):
         """Toggle the FloatingButton window itself (show/hide).
 
