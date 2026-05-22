@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import time
 
 from PyQt6.QtCore import Qt, QPoint, QTimer, QRect
 from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QShortcut, QKeySequence
@@ -71,6 +72,13 @@ class FloatingButton(QWidget):
         self._anim_timer.timeout.connect(self._tick_alpha)
         self._anim_timer.start(16)
 
+        # ---- workspace tracking (GNOME Wayland) ----
+        self._last_paint_time = time.time()
+        self._ws_reapply_debounce = 0.0
+        self._ws_timer = QTimer(self)
+        self._ws_timer.timeout.connect(self._check_workspace)
+        self._ws_timer.start(2000)
+
         # ── force native window, position, then show ──────────────────
         self.winId()  # create native wl_surface + xdg-surface
         self._load_settings()  # load ALL: opacity, size, position, sidebar dims
@@ -104,6 +112,7 @@ class FloatingButton(QWidget):
     # ── paint ──────────────────────────────────────────────────────────────
 
     def paintEvent(self, event):
+        self._last_paint_time = time.time()
         alpha = min(255, max(0, int(self._current_alpha * 255)))
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -456,6 +465,25 @@ class FloatingButton(QWidget):
             self._paths.write('button_pos.json', json.dumps(existing, indent=2))
         except Exception as e:
             logging.error(f"[FloatingButton] Save position failed: {e}")
+
+    # ---- workspace tracking ----
+
+    def _check_workspace(self):
+        if not self.isVisible():
+            return
+        now = time.time()
+        if now - self._last_paint_time > 5.0:
+            if now - self._ws_reapply_debounce > 4.0:
+                self._ws_reapply_debounce = now
+                self._reapply_workspace()
+
+    def _reapply_workspace(self):
+        self.hide()
+        QTimer.singleShot(100, self._reshow_workspace)
+
+    def _reshow_workspace(self):
+        self.show()
+        self.raise_()
 
     def _load_position(self):
         """Reload position + sidebar dims from button_pos.json.
