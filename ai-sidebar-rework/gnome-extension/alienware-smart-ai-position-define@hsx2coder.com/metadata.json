@@ -1,0 +1,9 @@
+{
+  "name": "AI Sidebar Coordinator",
+  "description": "Multi-monitor hot-zone detection for the AI Sidebar Python daemon. Shows the sidebar when the cursor approaches the right edge of any screen. Tracks per-monitor cursor position via Mutter APIs and positions the sidebar on the correct display.",
+  "uuid": "alienware-smart-ai-position-define@hsx2coder.com",
+  "shell-version": ["45", "46", "47"],
+  "version": 1,
+  "url": "https://github.com/user/ai-sidebar-rework",
+  "session-mode": "user"
+}

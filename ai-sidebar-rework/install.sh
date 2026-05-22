@@ -16,10 +16,10 @@ PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # ── Targets ────────────────────────────────────────────────────────────
 INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ai-sidebar"
-EXTENSION_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/ai-sidebar@rework.local"
+EXTENSION_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/gnome-shell/extensions/alienware-smart-ai-position-define@hsx2coder.com"
 BIN_DIR="${HOME}/.local/bin"
 DATA_DIR="${HOME}/.smartAI"
-EXT_UUID="ai-sidebar@rework.local"
+EXT_UUID="alienware-smart-ai-position-define@hsx2coder.com"
 
 echo "=========================================="
 echo " AI Sidebar Rework — Installer"
@@ -76,9 +76,9 @@ pip3 install -q --no-input PyQt6 PyQt6-WebEngine requests 2>/dev/null || {
 
 # ── Install GNOME Extension ────────────────────────────────────────────
 echo "[Install] Installing GNOME Shell extension..."
-cp "$SCRIPT_DIR/gnome-extension/ai-sidebar@rework.local/extension.js"  "$EXTENSION_DIR/"
-cp "$SCRIPT_DIR/gnome-extension/ai-sidebar@rework.local/metadata.json" "$EXTENSION_DIR/"
-cp "$SCRIPT_DIR/gnome-extension/ai-sidebar@rework.local/stylesheet.css" "$EXTENSION_DIR/"
+cp "$SCRIPT_DIR/gnome-extension/alienware-smart-ai-position-define@hsx2coder.com/extension.js"  "$EXTENSION_DIR/"
+cp "$SCRIPT_DIR/gnome-extension/alienware-smart-ai-position-define@hsx2coder.com/metadata.json" "$EXTENSION_DIR/"
+cp "$SCRIPT_DIR/gnome-extension/alienware-smart-ai-position-define@hsx2coder.com/stylesheet.css" "$EXTENSION_DIR/"
 
 # ── Optional: copy icons from parent project ───────────────────────────
 if [[ "${1:-}" == "--copy-icons" ]]; then

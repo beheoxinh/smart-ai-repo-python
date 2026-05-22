@@ -14,12 +14,12 @@ The original Python/PyQt6 sidebar uses XWayland + `_NET_WM_WINDOW_TYPE_DOCK` + r
 
 This rework splits the problem cleanly:
 
-| Responsibility | Owner | Technology |
-|---|---|---|
-| Hot-zone detection / multi-monitor | GNOME Shell Extension | GJS + Mutter API |
-| Window positioning on correct screen | GNOME Shell Extension | D-Bus → Python |
-| WebView, navigation, menus, resize | Python Daemon | PyQt6 + QWebEngineView |
-| IPC between them | D-Bus | `com.smartai.Sidebar` |
+| Responsibility                       | Owner                 | Technology             |
+|--------------------------------------|-----------------------|------------------------|
+| Hot-zone detection / multi-monitor   | GNOME Shell Extension | GJS + Mutter API       |
+| Window positioning on correct screen | GNOME Shell Extension | D-Bus → Python         |
+| WebView, navigation, menus, resize   | Python Daemon         | PyQt6 + QWebEngineView |
+| IPC between them                     | D-Bus                 | `com.smartai.Sidebar`  |
 
 ## Architecture
 
@@ -27,7 +27,7 @@ This rework splits the problem cleanly:
 ┌──────────────────────────────────────────────────────────────────┐
 │  GNOME Shell (Mutter compositor)                                │
 │  ┌────────────────────────────────────────────────────────┐     │
-│  │  AI Sidebar Extension (ai-sidebar@rework.local)        │     │
+│  │  AI Sidebar Extension (alienware-smart-ai-position-define@hsx2coder.com)        │     │
 │  │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  │     │
 │  │  │ Cursor Track │─►│ D-Bus Proxy │─►│ Signal List. │  │     │
 │  │  │ (per-monitor)│  │             │  │ (state sync) │  │     │
@@ -51,6 +51,7 @@ This rework splits the problem cleanly:
 ### What Changed (vs. Original)
 
 **Removed (no longer needed):**
+
 - `import ctypes` for X11 `_NET_WM_WINDOW_TYPE_DOCK`
 - `import subprocess` / `import shutil` for `wmctrl`
 - `_set_as_dock_linux()` — X11 DOCK type
@@ -61,15 +62,17 @@ This rework splits the problem cleanly:
 - `QT_QPA_PLATFORM=xcb` is **kept** (still need XWayland for positioning)
 
 **Added:**
+
 - D-Bus service (`com.smartai.Sidebar`) with:
-  - `ShowOnScreen(int)`, `Hide()`, `Toggle()`, `Ping()`, `IsVisible()`
-  - `StateChanged(bool)`, `WidthChanged(int)`, `PopupState(bool)`
+    - `ShowOnScreen(int)`, `Hide()`, `Toggle()`, `Ping()`, `IsVisible()`
+    - `StateChanged(bool)`, `WidthChanged(int)`, `PopupState(bool)`
 - `show_on_screen(index)` method in Sidebar
 - `stateChanged`, `widthChanged`, `popupStateChanged` PyQtSignals
-- GNOME Shell extension (`ai-sidebar@rework.local`)
+- GNOME Shell extension (`alienware-smart-ai-position-define@hsx2coder.com`)
 - D-Bus reconnection logic in extension (8s retry)
 
 **Preserved (identical behavior):**
+
 - All WebView logic (Chrome compat, auth redirects, download handling)
 - Navigation bar with drag-to-reorder, add/edit/delete buttons
 - Context menus (nav buttons + webview)
@@ -92,7 +95,7 @@ ai-sidebar-rework/
 ├── .gitignore
 │
 ├── gnome-extension/
-│   └── ai-sidebar@rework.local/
+│   └── alienware-smart-ai-position-define@hsx2coder.com/
 │       ├── extension.js              # Hot-zone cursor tracking + D-Bus proxy
 │       ├── metadata.json             # GNOME Shell 45/46/47
 │       └── stylesheet.css
@@ -150,10 +153,10 @@ cd ai-sidebar-rework
 # Alt+F2 → type 'r' → Enter
 
 # Enable the extension
-gnome-extensions enable ai-sidebar@rework.local
+gnome-extensions enable alienware-smart-ai-position-define@hsx2coder.com
 
 # Verify
-gnome-extensions info ai-sidebar@rework.local
+gnome-extensions info alienware-smart-ai-position-define@hsx2coder.com
 ```
 
 ### 4. Run
@@ -232,6 +235,7 @@ gdbus monitor --session --dest com.smartai.Sidebar
 ## Fallback Mode (no Extension)
 
 If the GNOME Shell extension is not installed or D-Bus fails:
+
 - The tray icon's **Display Screen** submenu works as manual override
 - Auto-detection selects the rightmost monitor (same as original code)
 - The `Ctrl+Shift+F` hotkey still toggles visibility

@@ -22,9 +22,9 @@ export PIP_NO_INPUT="1"
 export GIT_TERMINAL_PROMPT="0"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-EXT_SRC="$SCRIPT_DIR/gnome-extension/ai-sidebar@rework.local"
-EXT_DST="$HOME/.local/share/gnome-shell/extensions/ai-sidebar@rework.local"
-EXT_UUID="ai-sidebar@rework.local"
+EXT_SRC="$SCRIPT_DIR/gnome-extension/alienware-smart-ai-position-define@hsx2coder.com"
+EXT_DST="$HOME/.local/share/gnome-shell/extensions/alienware-smart-ai-position-define@hsx2coder.com"
+EXT_UUID="alienware-smart-ai-position-define@hsx2coder.com"
 
 HELP="Usage: $0 [--extension] [--help]
 
