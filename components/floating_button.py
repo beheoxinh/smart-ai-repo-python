@@ -6,18 +6,18 @@ from PyQt6.QtCore import Qt, QPoint, QTimer, QRect
 from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QShortcut, QKeySequence
 from PyQt6.QtWidgets import QWidget, QApplication, QHBoxLayout
 
-from utils import AppPaths
 from components.sidebar_panel import SidebarPanel
+from utils import AppPaths
 
 
 class FloatingButton(QWidget):
     """Single window containing floating icon (left) + optional sidebar (right).
 
     Collapsed: 64×64 window (button only).
-    Expanded:  (64 + sidebar_w) × screen_height (button + sidebar at current pos).
+    Expanded:  (64 + sidebar_w) × 600 px (button + sidebar at current pos).
 
-    Sidebar is always on the same screen as the button because they share
-    one window surface — no setScreen() needed on Wayland.
+    No screen detection, no forced positioning.
+    Sidebar is always on the same screen as the button — same Qt surface.
     """
 
     SIZE = 64
@@ -214,25 +214,18 @@ class FloatingButton(QWidget):
         """Expand window width to show sidebar alongside the button."""
         self._sidebar_visible = True
 
-        # Use screen height so the web view has room, but KEEP current position
-        screen = QApplication.screenAt(self.geometry().center())
-        if not screen:
-            screen = QApplication.primaryScreen()
-            if not screen:
-                return
-
         window_w = self.SIZE + self._sidebar_w
-        window_h = screen.geometry().height()
+        window_h = 600  # fixed height — no screen geometry
 
         self._sidebar.show_content()
         self._sidebar.setFixedWidth(self._sidebar_w)
 
-        # Resize at current position — no forced screen-edge anchoring
+        # Resize at current position — no screen queries at all
         self.setFixedSize(window_w, window_h)
 
         logging.info(
             f"[FloatingButton] Sidebar shown: {window_w}x{window_h} @ "
-            f"({self.x()},{self.y()}) on {screen.name()}"
+            f"({self.x()},{self.y()})"
         )
 
     def _hide_sidebar(self):
