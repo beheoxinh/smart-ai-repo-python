@@ -58,6 +58,7 @@ class ResizeHandle(QFrame):
             if self.mode == 'horizontal':
                 self._start_pos = int(event.globalPosition().x())
                 self._start_size = self.parent.width()
+                self._start_win_x = self.parent.x()
             else:
                 self._start_pos = int(event.globalPosition().y())
                 self._start_size = self.parent.height()
@@ -70,7 +71,13 @@ class ResizeHandle(QFrame):
                 new_size = self._start_size - d
                 new_size = max(self.MIN_WIDTH, min(self.MAX_WIDTH, new_size))
                 if new_size != self.parent.width():
+                    delta = new_size - self._start_size
+                    new_x = self._start_win_x - delta
                     self.parent.setFixedWidth(new_size)
+                    # Use QWidget.move() for position — QWindow.setGeometry
+                    # is unreliable on Wayland; move() has a better chance
+                    # of being honored by the compositor
+                    self.parent.move(new_x, self.parent.y())
                     self.dragResized.emit(new_size)
             else:  # vertical
                 d = int(event.globalPosition().y()) - self._start_pos

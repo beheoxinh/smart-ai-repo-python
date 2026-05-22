@@ -274,6 +274,10 @@ class FloatingButton(QWidget):
         self._sidebar_w = new_w
         if self._sidebar is not None:
             self._sidebar.setFixedWidth(new_w)
+            # Move button to maintain position at sidebar's right edge
+            btn_x = self._sidebar.x() + new_w
+            self.move(btn_x, self.y())
+            self._save_position()
 
     def _on_sidebar_height_resize(self, new_h):
         self._sidebar_h = new_h
