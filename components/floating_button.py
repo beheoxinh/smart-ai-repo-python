@@ -300,7 +300,9 @@ class FloatingButton(QWidget):
             alpha_percent: Opacity percentage (0 = fully transparent, 100 = opaque)
         """
         alpha = alpha_percent / 100.0
-        self._set_target_alpha(alpha)
+        # Set both current and target for immediate effect
+        self._current_alpha = alpha
+        self._target_alpha = alpha
         self.update()
         self._save_settings({'opacity': alpha_percent})
         logging.info(f"[FloatingButton] Opacity set to {alpha_percent}%")

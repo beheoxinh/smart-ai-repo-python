@@ -99,36 +99,35 @@ def main():
         # ── opacity submenu ───────────────────────────────────────────────
         opacity_menu = QMenu("Opacity", tray_menu)
         
-        current_opacity = btn.get_opacity()
+        def rebuild_opacity_menu():
+            opacity_menu.clear()
+            current_opacity = btn.get_opacity()
+            for value in [20, 40, 60, 80, 100]:
+                checkmark = " ✓" if abs(current_opacity - value) < 5 else ""
+                action = QAction(f"{value}%{checkmark}", tray_menu)
+                action.triggered.connect((lambda v: lambda: btn.set_opacity(v))(value))
+                opacity_menu.addAction(action)
         
-        for value in [20, 40, 60, 80, 100]:
-            checkmark = " ✓" if abs(current_opacity - value) < 5 else ""
-            action = QAction(f"{value}%{checkmark}", tray_menu)
-            # Use default arg to capture value in closure
-            action.triggered.connect((lambda v: lambda: btn.set_opacity(v))(value))
-            opacity_menu.addAction(action)
+        opacity_menu.aboutToShow.connect(rebuild_opacity_menu)
+        rebuild_opacity_menu()
         
         tray_menu.addMenu(opacity_menu)
 
         # ── button size submenu ───────────────────────────────────────────
         size_menu = QMenu("Button Size", tray_menu)
-
-        size_48 = QAction("Small (48px)")
-        size_48.triggered.connect(lambda: btn.set_size(48))
-        size_menu.addAction(size_48)
-
-        size_64 = QAction("Medium (64px) ✓")
-        size_64.triggered.connect(lambda: btn.set_size(64))
-        size_menu.addAction(size_64)
-
-        size_80 = QAction("Large (80px)")
-        size_80.triggered.connect(lambda: btn.set_size(80))
-        size_menu.addAction(size_80)
-
-        size_96 = QAction("Extra Large (96px)")
-        size_96.triggered.connect(lambda: btn.set_size(96))
-        size_menu.addAction(size_96)
-
+        
+        def rebuild_size_menu():
+            size_menu.clear()
+            current_size = btn.get_size()
+            for size, label_prefix in [(48, "Small"), (64, "Medium"), (80, "Large"), (96, "Extra Large")]:
+                checkmark = " ✓" if current_size == size else ""
+                action = QAction(f"{label_prefix} ({size}px){checkmark}", tray_menu)
+                action.triggered.connect((lambda s: lambda: btn.set_size(s))(size))
+                size_menu.addAction(action)
+        
+        size_menu.aboutToShow.connect(rebuild_size_menu)
+        rebuild_size_menu()
+        
         tray_menu.addMenu(size_menu)
 
         tray_menu.addSeparator()
