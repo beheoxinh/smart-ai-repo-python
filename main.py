@@ -1,7 +1,8 @@
+# File: main.py
 import os
 import sys
 
-# --- Stable Chromium Flags (before any Qt import) ---
+# --- Stable Chromium Flags ---
 os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
     "--no-sandbox "
@@ -17,8 +18,10 @@ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
 )
 
 import logging
-from PyQt6.QtGui import QAction, QIcon, QActionGroup
+
+from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+
 from utils import AppPaths
 from components.floating_button import FloatingButton
 import faulthandler
@@ -29,9 +32,9 @@ log_format = '%(asctime)s - %(levelname)s - %(message)s'
 logging.basicConfig(level=logging.INFO, format=log_format, stream=sys.stdout)
 
 
-# --- Error handler ---
 def show_critical_error(message):
-    from PyQt6.QtWidgets import QMessageBox, QApplication
+    """A simple, dependency-free error popup for critical failures."""
+    from PyQt6.QtWidgets import QMessageBox
     if not QApplication.instance():
         _ = QApplication(sys.argv)
     msg_box = QMessageBox()
@@ -54,63 +57,21 @@ def main():
 
         icon = QIcon(icon_path)
         if icon.isNull():
-            raise Exception("Failed to load icon.")
+            raise Exception("Failed to load icon, it might be corrupted.")
 
-        # ── Entry: Floating AI Button ──────────────────────
-        # Creates the sidebar internally on first click.
+        # ── Entry point: floating button owns the sidebar internally ──
         floating_btn = FloatingButton(app)
 
-        # ── System tray (secondary) ────────────────────────
+        # ── System tray ──────────────────────────────────────────────
         tray_icon = QSystemTrayIcon(icon, parent=app)
         tray_menu = QMenu()
 
         show_action = QAction("Show / Hide Sidebar")
-        show_action.triggered.connect(lambda *a: (floating_btn._update_target_screen(), floating_btn.sidebar.toggle_sidebar()))
+        show_action.triggered.connect(floating_btn._toggle_sidebar)
         tray_menu.addAction(show_action)
 
         tray_menu.addSeparator()
 
-        screen_menu = tray_menu.addMenu("Display Screen")
-
-        def refresh_screen_menu():
-            screen_menu.clear()
-            screen_group = QActionGroup(screen_menu)
-
-            auto_action = QAction("Auto (Rightmost)", screen_menu, checkable=True)
-            auto_action.setChecked(
-                floating_btn._sidebar is None
-                or floating_btn._sidebar.manual_screen_index == -1
-            )
-            auto_action.triggered.connect(
-                lambda: floating_btn._sidebar
-                        and floating_btn._sidebar.set_manual_screen(-1)
-            )
-            screen_menu.addAction(auto_action)
-            screen_group.addAction(auto_action)
-            screen_menu.addSeparator()
-
-            for i, screen in enumerate(QApplication.screens()):
-                screen_name = (
-                    f"Screen {i + 1}: {screen.name()}"
-                    f" ({screen.geometry().width()}x{screen.geometry().height()})"
-                )
-                action = QAction(screen_name, screen_menu, checkable=True)
-                action.setChecked(
-                    floating_btn._sidebar is not None
-                    and floating_btn._sidebar.manual_screen_index == i
-                )
-                action.triggered.connect(
-                    lambda checked, idx=i: floating_btn._sidebar
-                                           and floating_btn._sidebar.set_manual_screen(idx)
-                )
-                screen_menu.addAction(action)
-                screen_group.addAction(action)
-
-        refresh_screen_menu()
-        app.screenAdded.connect(lambda _: refresh_screen_menu())
-        app.screenRemoved.connect(lambda _: refresh_screen_menu())
-
-        tray_menu.addSeparator()
         exit_action = QAction("Quit")
         exit_action.triggered.connect(app.quit)
         tray_menu.addAction(exit_action)
@@ -121,7 +82,7 @@ def main():
         return app.exec()
 
     except Exception as e:
-        error_message = f"A fatal error occurred during startup:\n\n{str(e)}"
+        error_message = f"A fatal error occurred during application startup:\n\n{str(e)}"
         logging.critical(error_message, exc_info=True)
         show_critical_error(error_message)
         return 1

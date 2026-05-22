@@ -3,34 +3,32 @@ import logging
 import os
 
 from PyQt6.QtCore import Qt, QPoint, QTimer, QRect
-from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush
-from PyQt6.QtWidgets import QWidget, QApplication
+from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QShortcut, QKeySequence
+from PyQt6.QtWidgets import QWidget, QApplication, QHBoxLayout
 
 from utils import AppPaths
+from components.sidebar_panel import SidebarPanel
 
 
 class FloatingButton(QWidget):
-    """Floating AI button — entry point widget.
+    """Single window containing floating icon (left) + optional sidebar (right).
 
-    Always-on-top, draggable, semi-transparent circle.
-    Creates and manages the sidebar lazily.
+    Collapsed: 64×64 window (button only).
+    Expanded:  (64 + sidebar_w) × screen_height (button + sidebar).
 
-    Click → toggle sidebar.
-    Drag → choose which monitor sidebar appears on (via _update_target_screen).
-
-    On Wayland, sets sidebar as transient parent so compositor keeps
-    both windows on the same output.
+    Sidebar is always on the same screen as the button because they share
+    one window surface — no setScreen() needed on Wayland.
     """
 
     SIZE = 64
+    MIN_SIDEBAR_WIDTH = 360
 
     def __init__(self, app):
         super().__init__()
         self._app = app
         self._paths = AppPaths()
-        self._sidebar = None
-        self._ready = False
 
+        # ── window flags ──────────────────────────────────────────────────
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -38,99 +36,73 @@ class FloatingButton(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setFixedSize(self.SIZE, self.SIZE)
+        self.setMouseTracking(True)
 
-        # Icon
+        # ── icon ──────────────────────────────────────────────────────────
         icon_path = self._paths.get_path('images', 'tray.svg')
         self._icon = QPixmap(icon_path)
         if self._icon.isNull():
             logging.error(f"[FloatingButton] Cannot load icon: {icon_path}")
 
-        # State
+        # ── sidebar panel (embedded child) ────────────────────────────────
+        self._sidebar = SidebarPanel(self)
+        self._sidebar.setVisible(False)
+        self._sidebar_w = self.MIN_SIDEBAR_WIDTH
+        self._sidebar_visible = False
+
+        # Connect signals from sidebar
+        self._sidebar.resizeRequested.connect(self._on_sidebar_resize)
+        self._sidebar.closeRequested.connect(self._on_sidebar_close)
+
+        # ── layout: sidebar takes remaining space after button area ────────
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+
+        # Sidebar panel fills the layout; the button is painted in the
+        # leading 64px which are transparent in the layout.
+        self._layout.addWidget(self._sidebar)
+
+        # ── drag / click state ────────────────────────────────────────────
         self._press_pos = QPoint()
         self._dragging = False
         self._hovered = False
-        self._show_red_border = True
 
-        # Opacity (alpha paint — Wayland-safe)
+        # ── alpha paint (Wayland-safe, no setWindowOpacity) ───────────────
         self._current_alpha = 160
         self._target_alpha = 160
 
+        # ── keyboard shortcut ─────────────────────────────────────────────
+        self._shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
+        self._shortcut.activated.connect(self._toggle_sidebar)
+
+        # ── position from persistence ─────────────────────────────────────
         self._load_position()
 
-        wh = self.windowHandle()
-        logging.info(
-            f"[FloatingButton] Initial pos ({self.x()}, {self.y()}), "
-            f"screen: {wh.screen().name() if wh and wh.screen() else 'NONE'}"
-        )
-
-        # Alpha animation timer
+        # ── alpha animation timer ─────────────────────────────────────────
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._tick_alpha)
         self._anim_timer.start(16)
 
+        # ── initial size (button only) ────────────────────────────────────
+        self.setFixedSize(self.SIZE, self.SIZE)
+
         self.show()
         self.raise_()
-        self._ready = True
+        logging.info("[FloatingButton] Initialised (embedded sidebar)")
 
-        # Listen for compositor-initiated screen changes
-        if wh is not None:
-            wh.screenChanged.connect(self._on_screen_changed)
-
-        logging.info("[FloatingButton] Shown and raised")
-
-    # ── helpers ─────────────────────────────────────────────────────────────────
-
-    @property
-    def _current_screen(self):
-        wh = self.windowHandle()
-        return wh.screen() if wh else None
-
-    def _set_target_alpha(self, ratio):
-        self._target_alpha = max(80, min(255, int(255 * ratio)))
-
-    def _tick_alpha(self):
-        cur = self._current_alpha
-        diff = self._target_alpha - cur
-        if abs(diff) > 1:
-            self._current_alpha = cur + int(diff * 0.2)
-            self.update()
-
-    # ── lazy sidebar ────────────────────────────────────────────────────────────
-
-    @property
-    def sidebar(self):
-        if self._sidebar is None:
-            logging.info("[FloatingButton] First use — creating sidebar lazily")
-            from sidebar import Sidebar
-            self._sidebar = Sidebar()
-        return self._sidebar
-
-    def _set_sidebar_transient_parent(self):
-        """On Wayland, tell compositor sidebar belongs to button's output."""
-        btn_wh = self.windowHandle()
-        if btn_wh is None:
-            return
-        sidebar_wh = self.sidebar.windowHandle()
-        if sidebar_wh is None:
-            return
-        sidebar_wh.setTransientParent(btn_wh)
-        logging.info("[FloatingButton] Sidebar transient parent set")
-
-    # ── paint ───────────────────────────────────────────────────────────────────
+    # ── paint ──────────────────────────────────────────────────────────────
 
     def paintEvent(self, event):
+        """Paint the button circle at the left SIZE pixels of the window."""
         alpha = self._current_alpha
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        r = self.rect().adjusted(2, 2, -2, -2)
-
-        # Debug red border
-        if self._show_red_border:
-            painter.setPen(QPen(QColor(255, 0, 0), 3))
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(self.rect().adjusted(1, 1, -1, -1))
+        # Clip to button area (left SIZE × SIZE)
+        button_rect = QRect(0, 0, self.SIZE, self.SIZE)
+        painter.setClipRect(button_rect)
+        r = button_rect.adjusted(2, 2, -2, -2)
 
         # Shadow
         painter.setPen(Qt.PenStyle.NoPen)
@@ -146,7 +118,7 @@ class FloatingButton(QWidget):
         painter.setPen(QPen(QColor(255, 255, 255, min(alpha // 3, 80)), 1.5))
         painter.drawEllipse(r)
 
-        # Icon with alpha
+        # Icon
         if self._icon and not self._icon.isNull():
             icon_size = self.SIZE - 20
             scaled = self._icon.scaled(
@@ -154,8 +126,8 @@ class FloatingButton(QWidget):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            x = (self.width() - scaled.width()) // 2
-            y = (self.height() - scaled.height()) // 2
+            cx = (button_rect.width() - scaled.width()) // 2
+            cy = (button_rect.height() - scaled.height()) // 2
 
             tinted = QPixmap(scaled.size())
             tinted.fill(Qt.GlobalColor.transparent)
@@ -168,14 +140,29 @@ class FloatingButton(QWidget):
             tp.fillRect(tinted.rect(), QColor(255, 255, 255, alpha))
             tp.end()
 
-            painter.drawPixmap(x, y, tinted)
+            painter.drawPixmap(cx, cy, tinted)
 
         painter.end()
 
-    # ── mouse: Wayland-compatible drag with startSystemMove ─────────────────────
+    # ── alpha helpers ───────────────────────────────────────────────────────
+
+    def _set_target_alpha(self, ratio):
+        self._target_alpha = max(80, min(255, int(255 * ratio)))
+
+    def _tick_alpha(self):
+        cur = self._current_alpha
+        diff = self._target_alpha - cur
+        if abs(diff) > 1:
+            self._current_alpha = cur + int(diff * 0.2)
+            self.update()
+
+    # ── mouse: drag (Wayland-safe startSystemMove) vs click ────────────────
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            # Only handle clicks in the button area (left SIZE px)
+            if event.position().x() > self.SIZE:
+                return
             self._press_pos = event.globalPosition().toPoint()
             self._dragging = False
             self._set_target_alpha(1.0)
@@ -195,75 +182,97 @@ class FloatingButton(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             if self._dragging:
                 self._dragging = False
-                self._clamp_to_screen()
-                self._update_target_screen()
                 self._save_position()
             else:
-                # Click — toggle sidebar
-                self._update_target_screen()
-                self.sidebar.toggle_sidebar()
-                self._set_sidebar_transient_parent()
+                self._toggle_sidebar()
 
-            self._target_alpha = 0.70 if self._hovered else 0.50
+            self._set_target_alpha(0.70 if self._hovered else 0.50)
             self.update()
 
-    # ── screen change ───────────────────────────────────────────────────────────
-
-    def _on_screen_changed(self, screen):
-        if not self._ready or not screen:
-            return
-        logging.info(f"[FloatingButton] Screen changed to: {screen.name()}")
-        self._update_target_screen()
-
-    # ── hover ───────────────────────────────────────────────────────────────────
+    # ── hover ───────────────────────────────────────────────────────────────
 
     def enterEvent(self, event):
         self._hovered = True
-        self._target_alpha = 0.85
+        self._set_target_alpha(0.85)
         self.update()
 
     def leaveEvent(self, event):
         self._hovered = False
         if not self._dragging:
-            self._target_alpha = 0.50
+            self._set_target_alpha(0.50)
         self.update()
 
-    # ── screen logic ────────────────────────────────────────────────────────────
+    # ── sidebar toggle ─────────────────────────────────────────────────────
 
-    def _update_target_screen(self):
-        screen = self._current_screen
+    def _toggle_sidebar(self):
+        if self._sidebar_visible:
+            self._hide_sidebar()
+        else:
+            self._show_sidebar()
+
+    def _show_sidebar(self):
+        """Expand window to show button + sidebar."""
+        self._sidebar_visible = True
+
+        # Determine target screen from current position
+        center = self.geometry().center()
+        screen = QApplication.screenAt(center)
         if not screen:
-            return
-        screens = QApplication.screens()
-        for i, s in enumerate(screens):
-            if s.name() == screen.name():
-                self.sidebar.set_manual_screen(i)
-                geo = screen.geometry()
-                logging.info(
-                    f"[FloatingButton] → Screen {i}: {screen.name()} "
-                    f"({geo.width()}x{geo.height()} @ {geo.x()},{geo.y()})"
-                )
-                break
+            screen = QApplication.primaryScreen()
+            if not screen:
+                return
+        geom = screen.geometry()
 
-    def _clamp_to_screen(self):
-        screen = self._current_screen
+        # Desired geometry: anchored to right edge of screen
+        window_w = self.SIZE + self._sidebar_w
+        window_h = geom.height()
+        new_x = geom.x() + geom.width() - window_w
+        new_y = geom.y()
+
+        # Show sidebar content first (layout resolves)
+        self._sidebar.show_content()
+        self._sidebar.setFixedWidth(self._sidebar_w)
+
+        # Resize and position window
+        self.setFixedSize(window_w, window_h)
+        self.setGeometry(new_x, new_y, window_w, window_h)
+
+        logging.info(
+            f"[FloatingButton] Sidebar shown: {window_w}x{window_h} @ "
+            f"({new_x},{new_y}) on {screen.name()}"
+        )
+
+    def _hide_sidebar(self):
+        """Shrink window back to button-only."""
+        self._sidebar_visible = False
+        self._sidebar.hide_content()
+        self.setFixedSize(self.SIZE, self.SIZE)
+        self.update()
+        logging.info("[FloatingButton] Sidebar hidden")
+
+    def _on_sidebar_close(self):
+        """Called by sidebar watchdog or close button."""
+        self._hide_sidebar()
+
+    def _on_sidebar_resize(self, new_w):
+        """Called during resize-handle drag — adjust window width."""
+        self._sidebar_w = new_w
+        self._sidebar.setFixedWidth(new_w)
+
+        center = self.geometry().center()
+        screen = QApplication.screenAt(center)
         if not screen:
-            return
-        g = screen.geometry()
-        x = max(g.x(), min(self.x(), g.x() + g.width() - self.SIZE))
-        y = max(g.y(), min(self.y(), g.y() + g.height() - self.SIZE))
-        self.move(x, y)
+            screen = QApplication.primaryScreen()
+            if not screen:
+                return
+        geom = screen.geometry()
+        window_w = self.SIZE + new_w
+        new_x = geom.x() + geom.width() - window_w
 
-    # ── position persistence ────────────────────────────────────────────────────
+        self.setFixedSize(window_w, self.height())
+        self.move(new_x, self.y())
 
-    def _place_default(self):
-        screen = QApplication.primaryScreen()
-        if screen:
-            g = screen.geometry()
-            self.move(
-                g.x() + (g.width() - self.SIZE) // 2,
-                g.y() + (g.height() - self.SIZE) // 2,
-            )
+    # ── position persistence ───────────────────────────────────────────────
 
     def _get_pos_file(self):
         return os.path.join(self._paths.get_data_dir(), 'button_pos.json')
@@ -281,13 +290,10 @@ class FloatingButton(QWidget):
         if not os.path.exists(path):
             self._place_default()
             return
-
         try:
             with open(path) as f:
                 data = json.load(f)
             x, y = data.get('x', 0), data.get('y', 0)
-
-            # Validate: ensure at least partially visible on some screen
             test_rect = QRect(x, y, self.SIZE, self.SIZE)
             on_screen = any(
                 s.geometry().intersects(test_rect) for s in QApplication.screens()
@@ -298,3 +304,12 @@ class FloatingButton(QWidget):
                 raise ValueError("off-screen")
         except Exception:
             self._place_default()
+
+    def _place_default(self):
+        screen = QApplication.primaryScreen()
+        if screen:
+            g = screen.geometry()
+            self.move(
+                g.x() + (g.width() - self.SIZE) // 2,
+                g.y() + (g.height() - self.SIZE) // 2,
+            )
