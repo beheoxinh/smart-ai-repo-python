@@ -72,19 +72,12 @@ class FloatingButton(QWidget):
         self._anim_timer.timeout.connect(self._tick_alpha)
         self._anim_timer.start(16)
 
-        # ---- workspace tracking (GNOME Wayland) ----
-        # activeChanged detects focus loss (workspace switch or
-        # user clicks another window).  If focus doesn't return
-        # within 3 s, we force a re-show to move the button to
-        # the current workspace.
-        self._ws_reapply_debounce = 0.0
-        self._ws_lost_active_at = 0.0
+        # ---- workspace tracking ----
+        # Every 3 s, if sidebar is closed, force hide/show to
+        # re-map the window onto the current GNOME workspace.
         self._ws_timer = QTimer(self)
-        self._ws_timer.timeout.connect(self._check_workspace)
-        self._ws_timer.start(1500)
-        wh = self.windowHandle()
-        if wh:
-            wh.activeChanged.connect(self._on_ws_active_changed)
+        self._ws_timer.timeout.connect(self._reapply_workspace)
+        self._ws_timer.start(3000)
 
         # ── force native window, position, then show ──────────────────
         self.winId()  # create native wl_surface + xdg-surface
@@ -208,6 +201,13 @@ class FloatingButton(QWidget):
             # Restore to resting alpha (hover re-applies 1.0 via enterEvent)
             self._set_target_alpha(self._resting_alpha)
             self.update()
+
+    # ---- hover ----
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self._set_target_alpha(1.0)
+        self.update()
 
     def leaveEvent(self, event):
         self._hovered = False
@@ -467,50 +467,19 @@ class FloatingButton(QWidget):
 
     # ---- workspace tracking ----
 
-    def _on_ws_active_changed(self):
-        """Window focus changed — might be workspace switch or just
-        user clicking another window on the same workspace.
-        Record the timestamp so _check_workspace can act."""
-        wh = self.windowHandle()
-        if wh and not wh.isActive() and self.isVisible():
-            self._ws_lost_active_at = time.time()
-        elif wh and wh.isActive():
-            self._ws_lost_active_at = 0.0
-
-    def _check_workspace(self):
-        """If window lost activation (workspace switch) and cursor
-        has not re-entered the widget, re-show on the current workspace."""
-        if not self.isVisible():
-            return
-        now = time.time()
-        # Primary: activation-based detection
-        if self._ws_lost_active_at != 0.0:
-            if now - self._ws_lost_active_at > 3.0:
-                if now - self._ws_reapply_debounce > 4.0:
-                    self._ws_reapply_debounce = now
-                    self._ws_lost_active_at = 0.0
-                    self._reapply_workspace()
-        # Fallback: if no activation signal arrived at all (WA_ShowWithout-
-        # Activating prevents focus), force re-show every 20 s so the button
-        # eventually follows the workspace.
-        elif now - self._ws_reapply_debounce > 20.0:
-            self._ws_reapply_debounce = now
-            self._reapply_workspace()
-
     def _reapply_workspace(self):
+        """Re-map window onto current GNOME workspace.
+        On Wayland, hide() + show() causes the compositor to
+        re-evaluate window workspace placement — Tool windows
+        without a transient parent go to the active workspace."""
+        if not self.isVisible() or self._sidebar_visible:
+            return
         self.hide()
-        QTimer.singleShot(100, self._reshow_workspace)
+        QTimer.singleShot(50, self._reshow_workspace)
 
     def _reshow_workspace(self):
         self.show()
         self.raise_()
-
-    def enterEvent(self, event):
-        """Cancel workspace re-apply if cursor re-enters (same workspace)."""
-        self._ws_lost_active_at = 0.0
-        self._hovered = True
-        self._set_target_alpha(1.0)
-        self.update()
 
     def _load_position(self):
         """Reload position + sidebar dims from button_pos.json.
