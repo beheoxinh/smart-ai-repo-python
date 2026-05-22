@@ -5,9 +5,9 @@ from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QApplication
 
-from components.resize_handle import ResizeHandle
-from components.content_widget import ContentWidget
 from components.bottom_bar import BottomBar
+from components.content_widget import ContentWidget
+from components.resize_handle import ResizeHandle
 
 
 class SidebarPanel(QWidget):
@@ -17,15 +17,15 @@ class SidebarPanel(QWidget):
     Pure content widget that the parent FloatingButton resizes/positions.
     """
 
-    resizeRequested = pyqtSignal(int)   # new sidebar width from drag handle
-    closeRequested = pyqtSignal()        # from watchdog or close button
+    resizeRequested = pyqtSignal(int)  # new sidebar width from drag handle
+    closeRequested = pyqtSignal()  # from watchdog or close button
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setVisible(False)
 
         # ── state ─────────────────────────────────────────────────────
-        self._sidebar_w = 400            # current sidebar width
+        self._sidebar_w = 400  # current sidebar width
         self.is_visible = False
         self.is_resizing = False
         self.has_active_popup = False
@@ -136,9 +136,9 @@ class SidebarPanel(QWidget):
             return
         time_away = now - self.last_mouse_in_time
         if time_away > 2.0 and not (
-            self.has_active_popup
-            or self.is_nav_menu_open
-            or self.is_webview_menu_open
+                self.has_active_popup
+                or self.is_nav_menu_open
+                or self.is_webview_menu_open
         ):
             self.closeRequested.emit()
 
@@ -159,9 +159,9 @@ class SidebarPanel(QWidget):
         if not self.is_visible or self.is_resizing:
             return
         if (
-            self.has_active_popup
-            or self.is_nav_menu_open
-            or self.is_webview_menu_open
+                self.has_active_popup
+                or self.is_nav_menu_open
+                or self.is_webview_menu_open
         ):
             return
         if (time.time() - self.last_show_time) < 0.5:

@@ -6,8 +6,8 @@ from PyQt6.QtCore import Qt, QPoint, QTimer, QRect
 from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QShortcut, QKeySequence
 from PyQt6.QtWidgets import QWidget, QApplication
 
-from utils import AppPaths
 from components.sidebar_panel import SidebarPanel
+from utils import AppPaths
 
 
 class FloatingButton(QWidget):
@@ -201,26 +201,45 @@ class FloatingButton(QWidget):
         self._toggle_sidebar()
 
     def _show_sidebar(self):
-        """Show sidebar as a separate window at button's right edge.
+        """Show sidebar flush against the RIGHT edge of the current screen.
 
-        Button position NEVER changes — sidebar is positioned relative
-        to wherever the button currently is.
+        The button gets pushed to the left of the sidebar so both are
+        docked at the right edge.  Once placed, the button stays there
+        (position saved) — subsequent show/hide doesn't move it.
         """
         self._sidebar_visible = True
         sidebar = self._get_sidebar()
+        sidebar_w = self._sidebar_w
 
-        # Position: right of button, same Y
-        sx = self.x() + self.SIZE
-        sy = self.y()
+        # Find the screen the button is on
+        screen = QApplication.screenAt(self.geometry().center())
+        if screen:
+            sg = screen.geometry()
+            # Sidebar flush against right edge
+            sx = sg.x() + sg.width() - sidebar_w
+            # Button immediately to the left of sidebar
+            btn_x = sx - self.SIZE
+            sy = max(sg.y(), min(self.y(), sg.y() + sg.height() - 600))
+            # Move the button first
+            wh = self.windowHandle()
+            if wh is not None:
+                wh.setGeometry(QRect(btn_x, self.y(), self.SIZE, self.SIZE))
+            else:
+                self.move(btn_x, self.y())
+            self._save_position()
+        else:
+            # Fallback: right of button
+            sx = self.x() + self.SIZE
+            sy = self.y()
 
         sidebar.show_content()
-        sidebar.setGeometry(sx, sy, self._sidebar_w, 600)
+        sidebar.setGeometry(sx, sy, sidebar_w, 600)
         sidebar.show()
         sidebar.raise_()
 
         logging.info(
-            f"[FloatingButton] Sidebar shown at ({sx},{sy}) "
-            f"{self._sidebar_w}x600 — button at ({self.x()},{self.y()})"
+            f"[FloatingButton] Sidebar at ({sx},{sy}) "
+            f"{sidebar_w}x600 — button at ({self.x()},{self.y()})"
         )
 
     def _hide_sidebar(self):
