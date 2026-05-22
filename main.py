@@ -1,4 +1,3 @@
-# File: main.py
 import os
 import sys
 
@@ -31,6 +30,7 @@ from PyQt6.QtGui import QAction, QIcon, QActionGroup
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from utils import AppPaths
 from sidebar import Sidebar
+from components.floating_button import FloatingButton
 import traceback
 import faulthandler
 
@@ -81,6 +81,9 @@ def main():
             error_info = f"Failed to create the main window (Sidebar).\n\nError: {e}\n\nTraceback:\n{traceback.format_exc()}"
             logging.error(error_info)
             raise RuntimeError(error_info) from e
+
+        # --- Floating AI Button (screen selector) ---
+        FloatingButton(sidebar)
 
         # --- Screen Selection Menu ---
         screen_menu = tray_menu.addMenu("Display Screen")

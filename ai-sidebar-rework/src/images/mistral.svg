@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
-  <circle cx="120" cy="120" r="115" fill="#1a1a2e"/>
-  <path d="M60 60 L80 50 L100 60 L120 50 L140 60 L160 50 L180 60" fill="none" stroke="#7dd3fc" stroke-width="5" stroke-linecap="round"/>
-  <path d="M60 100 L80 90 L100 100 L120 90 L140 100 L160 90 L180 100" fill="none" stroke="#38bdf8" stroke-width="5" stroke-linecap="round"/>
-  <path d="M60 140 L80 130 L100 140 L120 130 L140 140 L160 130 L180 140" fill="none" stroke="#0ea5e9" stroke-width="5" stroke-linecap="round"/>
-  <path d="M60 180 L80 170 L100 180 L120 170 L140 180 L160 170 L180 180" fill="none" stroke="#0284c7" stroke-width="5" stroke-linecap="round"/>
-</svg>
