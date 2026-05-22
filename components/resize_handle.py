@@ -1,4 +1,4 @@
-from PyQt6.QtCore import Qt, QRect, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QFrame
 
 
@@ -58,7 +58,6 @@ class ResizeHandle(QFrame):
             if self.mode == 'horizontal':
                 self._start_pos = int(event.globalPosition().x())
                 self._start_size = self.parent.width()
-                self._start_win_x = self.parent.x()
             else:
                 self._start_pos = int(event.globalPosition().y())
                 self._start_size = self.parent.height()
@@ -71,14 +70,7 @@ class ResizeHandle(QFrame):
                 new_size = self._start_size - d
                 new_size = max(self.MIN_WIDTH, min(self.MAX_WIDTH, new_size))
                 if new_size != self.parent.width():
-                    delta = new_size - self._start_size
-                    new_x = self._start_win_x - delta
                     self.parent.setFixedWidth(new_size)
-                    wh = self.parent.windowHandle()
-                    if wh is not None:
-                        wh.setGeometry(QRect(new_x, self.parent.y(), new_size, self.parent.height()))
-                    else:
-                        self.parent.move(new_x, self.parent.y())
                     self.dragResized.emit(new_size)
             else:  # vertical
                 d = int(event.globalPosition().y()) - self._start_pos
