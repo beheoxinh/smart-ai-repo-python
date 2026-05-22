@@ -136,7 +136,8 @@ class FloatingButton(QWidget):
             tp.setCompositionMode(
                 QPainter.CompositionMode.CompositionMode_DestinationIn
             )
-            tp.fillRect(tinted.rect(), QColor(255, 255, 255, alpha))
+            # Icon always full opacity (255), button background uses alpha
+            tp.fillRect(tinted.rect(), QColor(255, 255, 255, 255))
             tp.end()
 
             painter.drawPixmap(cx, cy, tinted)
