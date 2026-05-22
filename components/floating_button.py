@@ -55,9 +55,8 @@ class FloatingButton(QWidget):
         self._hovered = False
 
         # ── alpha paint (Wayland-safe, no setWindowOpacity) ───────────────
-        self._base_alpha = 0.5  # Default 50% opacity
-        self._current_alpha = self._base_alpha
-        self._target_alpha = self._base_alpha
+        self._current_alpha = 0.5  # Default 50% opacity
+        self._target_alpha = 0.5
 
         # ── keyboard shortcut ─────────────────────────────────────────────
         self._shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
@@ -169,33 +168,28 @@ class FloatingButton(QWidget):
                     wh.startSystemMove()
                     self._dragging = True
 
-
-def mouseReleaseEvent(self, event):
-    if event.button() == Qt.MouseButton.LeftButton:
-        if self._dragging:
-            self._dragging = False
-            self._save_position()
-        else:
-            self._toggle_sidebar()
-        hover_target = min(1.0, self._base_alpha + 0.15)
-        self._set_target_alpha(hover_target if self._hovered else self._base_alpha)
-        self.update()
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self._dragging:
+                self._dragging = False
+                self._save_position()
+            else:
+                self._toggle_sidebar()
+            self._set_target_alpha(0.70 if self._hovered else 0.50)
+            self.update()
 
     # ── hover ───────────────────────────────────────────────────────────────
 
+    def enterEvent(self, event):
+        self._hovered = True
+        self._set_target_alpha(0.85)
+        self.update()
 
-def enterEvent(self, event):
-    self._hovered = True
-    hover_target = min(1.0, self._base_alpha + 0.15)
-    self._set_target_alpha(hover_target)
-    self.update()
-
-
-def leaveEvent(self, event):
-    self._hovered = False
-    if not self._dragging:
-        self._set_target_alpha(self._base_alpha)
-    self.update()
+    def leaveEvent(self, event):
+        self._hovered = False
+        if not self._dragging:
+            self._set_target_alpha(0.50)
+        self.update()
 
     # ── sidebar toggle ─────────────────────────────────────────────────────
 
@@ -303,7 +297,6 @@ def leaveEvent(self, event):
             alpha_percent: Opacity percentage (0 = fully transparent, 100 = opaque)
         """
         alpha = alpha_percent / 100.0
-        self._base_alpha = alpha
         # Set both current and target for immediate effect
         self._current_alpha = alpha
         self._target_alpha = alpha
@@ -351,7 +344,7 @@ def leaveEvent(self, event):
             self.show()
             self.raise_()
             # Re-paint to ensure correct alpha
-            self._set_target_alpha(self._base_alpha)
+            self._set_target_alpha(0.50)
             self.update()
 
     def _save_settings(self, updates):
@@ -373,7 +366,6 @@ def leaveEvent(self, event):
             # Load opacity (default 50%)
             opacity = data.get('opacity', 50)
             alpha = opacity / 100.0
-            self._base_alpha = alpha
             self._current_alpha = alpha
             self._target_alpha = alpha
 
