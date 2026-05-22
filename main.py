@@ -75,8 +75,8 @@ def main():
         # ── floating button (creates its own window + lazy sidebar) ────────
         btn = FloatingButton(app)
 
-        show_action = QAction("Show/Hide")
-        show_action.triggered.connect(btn.toggle_sidebar)
+        show_action = QAction("Show/Hide Button")
+        show_action.triggered.connect(btn.toggle_button)
         tray_menu.addAction(show_action)
 
         tray_menu.addSeparator()

@@ -289,6 +289,28 @@ class FloatingButton(QWidget):
     def _get_pos_file(self):
         return os.path.join(self._paths.get_data_dir(), 'button_pos.json')
 
+    def toggle_button(self):
+        """Toggle the FloatingButton window itself (show/hide).
+
+        When hiding, also hides the sidebar and saves position.
+        When showing, reloads position and restores the window.
+        Use this from tray icon menu.
+        """
+        if self.isVisible():
+            logging.info("[FloatingButton] Hiding button (tray toggle)")
+            self._save_position()
+            if self._sidebar_visible:
+                self._hide_sidebar()
+            self.hide()
+        else:
+            logging.info("[FloatingButton] Showing button (tray toggle)")
+            self._load_position()
+            self.show()
+            self.raise_()
+            # Re-paint to ensure correct alpha
+            self._set_target_alpha(0.50)
+            self.update()
+
     def _save_position(self):
         data = {
             'x': self.x(),
