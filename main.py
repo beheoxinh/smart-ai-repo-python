@@ -103,9 +103,10 @@ def main():
         
         for value in [20, 40, 60, 80, 100]:
             checkmark = " ✓" if abs(current_opacity - value) < 5 else ""
-            opacity_action = QAction(f"{value}%{checkmark}")
-            opacity_action.triggered.connect(lambda checked, v=value: btn.set_opacity(v))
-            opacity_menu.addAction(opacity_action)
+            action = QAction(f"{value}%{checkmark}", tray_menu)
+            # Use default arg to capture value in closure
+            action.triggered.connect((lambda v: lambda: btn.set_opacity(v))(value))
+            opacity_menu.addAction(action)
         
         tray_menu.addMenu(opacity_menu)
 
