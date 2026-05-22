@@ -17,9 +17,6 @@ class FloatingButton(QWidget):
 
     Drag -> sets which monitor sidebar appears on.
     Click -> toggles sidebar visibility.
-
-    Uses WA_TranslucentBackground + alpha colours for transparency,
-    because setWindowOpacity is not supported on Wayland.
     """
 
     SIZE = 64
@@ -47,15 +44,16 @@ class FloatingButton(QWidget):
             logging.error(f"[FloatingButton] Cannot load icon: {icon_path}")
 
         # state
-        self._dragging = False
-        self._drag_start = QPoint()
+        self._potential_drag = False
+        self._system_moving = False
+        self._press_pos = QPoint()
         self._drag_offset = QPoint()
         self._hovered = False
-        self._show_red_border = True  # remove once user confirms visibility
+        self._show_red_border = True
 
-        # overlay opacity is done via alpha in paintEvent, NOT setWindowOpacity
-        # (Wayland does not support setWindowOpacity)
-        self._current_alpha = 160  # ~63 % opacity (0-255)
+        # opacity via alpha paint (Wayland-safe)
+        self._current_alpha = 160  # ~63 %
+        self._target_alpha = 160
 
         self._move_to_center()
 
@@ -67,10 +65,15 @@ class FloatingButton(QWidget):
             f"screen: {screen.name() if screen else 'NONE'}"
         )
 
-        # repaint timer for smooth alpha transitions (instead of opacity animation)
+        # alpha animation timer
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._tick_alpha)
         self._anim_timer.start(16)
+
+        # listen for screen changes (fires on Wayland after system move)
+        wh = self.windowHandle()
+        if wh is not None:
+            wh.screenChanged.connect(self._on_screen_changed)
 
         self.show()
         self.raise_()
@@ -88,41 +91,37 @@ class FloatingButton(QWidget):
 
     # -- alpha helpers ---------------------------------------------------------
 
-    def _set_target_alpha(self, visible_ratio):
-        """visible_ratio: 0.0 (fully invisible) .. 1.0 (fully opaque)"""
-        self._target_alpha = max(80, min(255, int(255 * visible_ratio)))
+    def _set_target_alpha(self, ratio):
+        self._target_alpha = max(80, min(255, int(255 * ratio)))
 
     def _tick_alpha(self):
         cur = self._current_alpha
-        target = getattr(self, '_target_alpha', cur)
-        diff = target - cur
+        diff = self._target_alpha - cur
         if abs(diff) > 1:
             self._current_alpha = cur + int(diff * 0.2)
-            self.update()  # triggers repaint with new alpha
+            self.update()
 
     # -- paint -----------------------------------------------------------------
 
     def paintEvent(self, event):
         alpha = self._current_alpha
-
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         r = self.rect().adjusted(2, 2, -2, -2)
 
-        # debug red border
         if self._show_red_border:
             painter.setPen(QPen(QColor(255, 0, 0), 3))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(self.rect().adjusted(1, 1, -1, -1))
 
-        # subtle shadow
+        # shadow
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(0, 0, 0, min(alpha // 3, 60)))
         painter.drawEllipse(r.translated(0, 2))
 
-        # background circle (alpha-driven)
-        if self._hovered or self._dragging:
+        # bg
+        if self._hovered or self._potential_drag or self._system_moving:
             base = QColor(60, 120, 240, min(alpha + 40, 255))
         else:
             base = QColor(45, 45, 52, alpha)
@@ -130,7 +129,7 @@ class FloatingButton(QWidget):
         painter.setPen(QPen(QColor(255, 255, 255, min(alpha // 3, 80)), 1.5))
         painter.drawEllipse(r)
 
-        # icon (semi-transparent as well)
+        # icon
         if self._icon and not self._icon.isNull():
             icon_size = self.SIZE - 20
             scaled = self._icon.scaled(
@@ -141,13 +140,14 @@ class FloatingButton(QWidget):
             x = (self.width() - scaled.width()) // 2
             y = (self.height() - scaled.height()) // 2
 
-            # draw icon with alpha by painting onto a temporary transparent pixmap
             tinted = QPixmap(scaled.size())
             tinted.fill(Qt.GlobalColor.transparent)
             tp = QPainter(tinted)
             tp.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
             tp.drawPixmap(0, 0, scaled)
-            tp.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+            tp.setCompositionMode(
+                QPainter.CompositionMode.CompositionMode_DestinationIn
+            )
             tp.fillRect(tinted.rect(), QColor(255, 255, 255, alpha))
             tp.end()
 
@@ -155,35 +155,59 @@ class FloatingButton(QWidget):
 
         painter.end()
 
-    # -- mouse -----------------------------------------------------------------
+    # -- mouse: Wayland-compatible drag using startSystemMove -------------------
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_start = event.globalPosition().toPoint()
-            self._drag_offset = self._drag_start - self.pos()
+            self._press_pos = event.globalPosition().toPoint()
+            self._drag_offset = self._press_pos - self.pos()
+            self._potential_drag = True
+            self._system_moving = False
             self._set_target_alpha(1.0)
             self.update()
 
     def mouseMoveEvent(self, event):
-        if event.buttons() & Qt.MouseButton.LeftButton:
-            delta = (event.globalPosition().toPoint() -
-                     self._drag_start).manhattanLength()
+        if (
+            event.buttons() & Qt.MouseButton.LeftButton
+            and self._potential_drag
+            and not self._system_moving
+        ):
+            delta = (
+                event.globalPosition().toPoint() - self._press_pos
+            ).manhattanLength()
             if delta > 8:
-                self._dragging = True
-            if self._dragging:
-                self.move(event.globalPosition().toPoint() - self._drag_offset)
+                # Use compositor move (works on Wayland + X11 via xdg-shell)
+                wh = self.windowHandle()
+                if wh is not None:
+                    wh.startSystemMove()
+                    self._system_moving = True
+                    self._potential_drag = False
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            if self._dragging:
-                self._dragging = False
+            if self._potential_drag:
+                # was a click, not a drag
+                self._potential_drag = False
+                self.sidebar.toggle_sidebar()
+            elif self._system_moving:
+                # system move just finished -- update target
+                self._system_moving = False
                 self._clamp_to_screen()
                 self._update_target_screen()
                 self._save_position()
-            else:
-                self.sidebar.toggle_sidebar()
-            self._set_target_alpha(0.85 if self._hovered else 0.63)
-            self.update()
+
+        self._potential_drag = False
+        self._system_moving = False
+        self._set_target_alpha(0.85 if self._hovered else 0.63)
+        self.update()
+
+    def _on_screen_changed(self, screen):
+        """Called by QWindow when the window moves to a different output."""
+        if screen:
+            logging.info(f"[FloatingButton] Screen changed to: {screen.name()}")
+            # The move is in progress or just finished; update sidebar target
+            if self._system_moving:
+                self._update_target_screen()
 
     # -- hover -----------------------------------------------------------------
 
@@ -194,7 +218,7 @@ class FloatingButton(QWidget):
 
     def leaveEvent(self, event):
         self._hovered = False
-        if not self._dragging:
+        if not self._potential_drag and not self._system_moving:
             self._set_target_alpha(0.63)
         self.update()
 
@@ -257,8 +281,10 @@ class FloatingButton(QWidget):
             with open(path) as f:
                 data = json.load(f)
             x, y = data.get('x', 0), data.get('y', 0)
-            if any(s.geometry().intersects(QRect(x, y, self.SIZE, self.SIZE))
-                   for s in QApplication.screens()):
+            if any(
+                s.geometry().intersects(QRect(x, y, self.SIZE, self.SIZE))
+                for s in QApplication.screens()
+            ):
                 self.move(x, y)
             else:
                 raise ValueError("off-screen")
