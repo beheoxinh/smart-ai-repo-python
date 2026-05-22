@@ -11,15 +11,13 @@ from components.sidebar_panel import SidebarPanel
 
 
 class FloatingButton(QWidget):
-    """Single window: sidebar (left) + floating icon (right).
+    """Single window: icon (left) + optional sidebar (right).
 
     Collapsed:  64×64 window (icon only).
-    Expanded:   (sidebar_w + 64) × 600 px — sidebar left of the icon.
+    Expanded:   (64 + sidebar_w) × 600 px — sidebar right of the icon.
 
-    The icon's screen position stays fixed when expanding/collapsing;
-    the window extends to the left to show the sidebar panel.
-
-    Always-on-top except fullscreen.  No screen-geometry anchoring.
+    The icon NEVER moves.  Window grows right on show, shrinks on hide.
+    No screen-geometry anchoring, no forced positioning.
     """
 
     SIZE = 64
@@ -46,7 +44,7 @@ class FloatingButton(QWidget):
         if self._icon.isNull():
             logging.error(f"[FloatingButton] Cannot load icon: {icon_path}")
 
-        # ── sidebar panel (embedded child, left of icon) ──────────────────
+        # ── sidebar panel (embedded child, right of icon) ─────────────────
         self._sidebar = SidebarPanel(self)
         self._sidebar.setVisible(False)
         self._sidebar_w = self.MIN_SIDEBAR_WIDTH
@@ -55,7 +53,7 @@ class FloatingButton(QWidget):
         self._sidebar.resizeRequested.connect(self._on_sidebar_resize)
         self._sidebar.closeRequested.connect(self._on_sidebar_close)
 
-        # ── layout: sidebar (left) then icon spacer (right) ───────────────
+        # ── layout: icon area (left 64px) → sidebar (remaining) ──────────
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
@@ -85,22 +83,17 @@ class FloatingButton(QWidget):
         self.setFixedSize(self.SIZE, self.SIZE)
         self.show()
         self.raise_()
-        logging.info("[FloatingButton] Initialised (sidebar-left layout)")
+        logging.info("[FloatingButton] Initialised")
 
     # ── paint ──────────────────────────────────────────────────────────────
 
     def paintEvent(self, event):
-        """Paint the icon circle at the RIGHT edge of the window."""
+        """Paint the icon circle at the LEFT edge of the window."""
         alpha = self._current_alpha
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Button is always in the rightmost SIZE pixels
-        if self._sidebar_visible:
-            btn_x = self._sidebar_w
-        else:
-            btn_x = 0
-        btn_rect = QRect(btn_x, 0, self.SIZE, self.SIZE)
+        btn_rect = QRect(0, 0, self.SIZE, self.SIZE)
         painter.setClipRect(btn_rect)
         r = btn_rect.adjusted(2, 2, -2, -2)
 
@@ -126,7 +119,7 @@ class FloatingButton(QWidget):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            cx = btn_rect.x() + (btn_rect.width() - scaled.width()) // 2
+            cx = (btn_rect.width() - scaled.width()) // 2
             cy = (btn_rect.height() - scaled.height()) // 2
 
             tinted = QPixmap(scaled.size())
@@ -160,9 +153,6 @@ class FloatingButton(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            # Only handle clicks in the icon area (right SIZE px)
-            if self._sidebar_visible and event.position().x() < self._sidebar_w:
-                return
             self._press_pos = event.globalPosition().toPoint()
             self._dragging = False
             self._set_target_alpha(1.0)
@@ -201,7 +191,7 @@ class FloatingButton(QWidget):
             self._set_target_alpha(0.50)
         self.update()
 
-    # ── sidebar toggle ─────────────────────────────────────────────────────
+    # ── sidebar toggle (icon NEVER moves) ──────────────────────────────────
 
     def _toggle_sidebar(self):
         if self._sidebar_visible:
@@ -210,53 +200,31 @@ class FloatingButton(QWidget):
             self._show_sidebar()
 
     def _show_sidebar(self):
-        """Expand window to the left; icon stays at its current screen position."""
+        """Expand window rightward — icon stays at its current position."""
         self._sidebar_visible = True
-
         window_w = self.SIZE + self._sidebar_w
         window_h = 600
-
         self._sidebar.show_content()
         self._sidebar.setFixedWidth(self._sidebar_w)
-
-        # Icon is at the RIGHT edge of the window; shift window left so icon
-        # doesn't move on screen.
-        new_x = self.x() - self._sidebar_w
         self.setFixedSize(window_w, window_h)
-        self.move(new_x, self.y())
-
-        logging.info(
-            f"[FloatingButton] Sidebar shown: {window_w}x{window_h} @ "
-            f"({new_x},{self.y()})"
-        )
+        logging.info(f"[FloatingButton] Sidebar shown: {window_w}x{window_h}")
 
     def _hide_sidebar(self):
-        """Shrink window back to icon-only; icon returns to saved position."""
+        """Shrink back to icon-only — icon never moved."""
         self._sidebar_visible = False
         self._sidebar.hide_content()
-
-        # Restore position to the icon's original x (which is window x
-        # after subtracting sidebar_w during show).
-        icon_x = self.x() + self._sidebar_w
         self.setFixedSize(self.SIZE, self.SIZE)
-        self.move(icon_x, self.y())
         self.update()
-
         logging.info("[FloatingButton] Sidebar hidden")
 
     def _on_sidebar_close(self):
         self._hide_sidebar()
 
     def _on_sidebar_resize(self, new_w):
-        """Resize handle dragged — keep icon pinned to right edge."""
-        delta = new_w - self._sidebar_w
+        """Resize handle — icon stays put, sidebar width changes."""
         self._sidebar_w = new_w
         self._sidebar.setFixedWidth(new_w)
-
-        window_w = self.SIZE + new_w
-        self.setFixedSize(window_w, self.height())
-        # Window moves left/right so icon's screen X stays constant
-        self.move(self.x() - delta, self.y())
+        self.setFixedSize(self.SIZE + new_w, self.height())
 
     # ── position persistence ───────────────────────────────────────────────
 
