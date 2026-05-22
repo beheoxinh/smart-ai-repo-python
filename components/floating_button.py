@@ -98,6 +98,8 @@ class FloatingButton(QWidget):
 
     def paintEvent(self, event):
         alpha = int(self._current_alpha * 255)
+        if self._hovered:
+            logging.debug(f"[FloatingButton] paintEvent: hovered=True, alpha={alpha}, _current_alpha={self._current_alpha}")
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -128,19 +130,10 @@ class FloatingButton(QWidget):
             cx = (self.width() - scaled.width()) // 2
             cy = (self.height() - scaled.height()) // 2
 
-            tinted = QPixmap(scaled.size())
-            tinted.fill(Qt.GlobalColor.transparent)
-            tp = QPainter(tinted)
-            tp.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
-            tp.drawPixmap(0, 0, scaled)
-            tp.setCompositionMode(
-                QPainter.CompositionMode.CompositionMode_DestinationIn
-            )
-            # Icon uses same alpha as button
-            tp.fillRect(tinted.rect(), QColor(255, 255, 255, alpha))
-            tp.end()
-
-            painter.drawPixmap(cx, cy, tinted)
+            # Simple opacity via painter
+            painter.setOpacity(self._current_alpha)
+            painter.drawPixmap(cx, cy, scaled)
+            painter.setOpacity(1.0)  # restore
 
         painter.end()
 
