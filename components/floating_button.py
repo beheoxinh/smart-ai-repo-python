@@ -55,8 +55,9 @@ class FloatingButton(QWidget):
         self._hovered = False
 
         # ── alpha paint (Wayland-safe, no setWindowOpacity) ───────────────
-        self._current_alpha = 0.5  # Default 50% opacity
-        self._target_alpha = 0.5
+        self._base_alpha = 0.5  # Default 50% opacity
+        self._current_alpha = self._base_alpha
+        self._target_alpha = self._base_alpha
 
         # ── keyboard shortcut ─────────────────────────────────────────────
         self._shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
@@ -68,9 +69,9 @@ class FloatingButton(QWidget):
         self._anim_timer.start(16)
 
         # ── force native window, position, then show ──────────────────
-        self.winId()                # create native wl_surface + xdg-surface
-        self._load_position()       # set geometry via QWindow.setGeometry
-        self._load_settings()       # restore opacity + size
+        self.winId()  # create native wl_surface + xdg-surface
+        self._load_position()  # set geometry via QWindow.setGeometry
+        self._load_settings()  # restore opacity + size
         self.show()
         self.raise_()
         logging.info("[FloatingButton] Initialised")
@@ -168,28 +169,33 @@ class FloatingButton(QWidget):
                     wh.startSystemMove()
                     self._dragging = True
 
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            if self._dragging:
-                self._dragging = False
-                self._save_position()
-            else:
-                self._toggle_sidebar()
-            self._set_target_alpha(0.70 if self._hovered else 0.50)
-            self.update()
+
+def mouseReleaseEvent(self, event):
+    if event.button() == Qt.MouseButton.LeftButton:
+        if self._dragging:
+            self._dragging = False
+            self._save_position()
+        else:
+            self._toggle_sidebar()
+        hover_target = min(1.0, self._base_alpha + 0.15)
+        self._set_target_alpha(hover_target if self._hovered else self._base_alpha)
+        self.update()
 
     # ── hover ───────────────────────────────────────────────────────────────
 
-    def enterEvent(self, event):
-        self._hovered = True
-        self._set_target_alpha(0.85)
-        self.update()
 
-    def leaveEvent(self, event):
-        self._hovered = False
-        if not self._dragging:
-            self._set_target_alpha(0.50)
-        self.update()
+def enterEvent(self, event):
+    self._hovered = True
+    hover_target = min(1.0, self._base_alpha + 0.15)
+    self._set_target_alpha(hover_target)
+    self.update()
+
+
+def leaveEvent(self, event):
+    self._hovered = False
+    if not self._dragging:
+        self._set_target_alpha(self._base_alpha)
+    self.update()
 
     # ── sidebar toggle ─────────────────────────────────────────────────────
 
@@ -297,6 +303,7 @@ class FloatingButton(QWidget):
             alpha_percent: Opacity percentage (0 = fully transparent, 100 = opaque)
         """
         alpha = alpha_percent / 100.0
+        self._base_alpha = alpha
         # Set both current and target for immediate effect
         self._current_alpha = alpha
         self._target_alpha = alpha
@@ -313,15 +320,15 @@ class FloatingButton(QWidget):
         if size < 32 or size > 128:
             logging.warning(f"[FloatingButton] Invalid size {size} (valid: 32-128)")
             return
-        
+
         # Update SIZE constant
         self.SIZE = size
         self.setFixedSize(size, size)
-        
+
         # Reload and reposition to ensure proper placement
         self._load_position()
         self.update()
-        
+
         self._save_settings({'size': size})
         logging.info(f"[FloatingButton] Size changed to {size}px")
 
@@ -344,7 +351,7 @@ class FloatingButton(QWidget):
             self.show()
             self.raise_()
             # Re-paint to ensure correct alpha
-            self._set_target_alpha(0.50)
+            self._set_target_alpha(self._base_alpha)
             self.update()
 
     def _save_settings(self, updates):
@@ -353,7 +360,7 @@ class FloatingButton(QWidget):
             existing = json.loads(self._paths.read('button_pos.json'))
         except Exception:
             existing = {}
-        
+
         existing.update(updates)
         self._paths.write('button_pos.json', json.dumps(existing, indent=2))
         logging.info(f"[FloatingButton] Settings saved: {updates}")
@@ -362,19 +369,20 @@ class FloatingButton(QWidget):
         """Load opacity and size from button_pos.json."""
         try:
             data = json.loads(self._paths.read('button_pos.json'))
-            
+
             # Load opacity (default 50%)
             opacity = data.get('opacity', 50)
             alpha = opacity / 100.0
+            self._base_alpha = alpha
             self._current_alpha = alpha
             self._target_alpha = alpha
-            
+
             # Load size (default 64)
             size = data.get('size', 64)
             if size != self.SIZE:
                 self.SIZE = size
                 self.setFixedSize(size, size)
-            
+
             logging.info(f"[FloatingButton] Settings loaded: opacity={opacity}%, size={size}px")
             return opacity, size
         except Exception as e:
@@ -399,14 +407,14 @@ class FloatingButton(QWidget):
             existing = json.loads(self._paths.read('button_pos.json'))
         except Exception:
             existing = {}
-        
+
         existing.update({
             'x': self.x(),
             'y': self.y(),
             'sidebar_w': self._sidebar_w,
             'sidebar_h': self._sidebar_h,
         })
-        
+
         try:
             self._paths.write('button_pos.json', json.dumps(existing, indent=2))
         except Exception as e:
