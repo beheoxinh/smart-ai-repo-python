@@ -17,7 +17,7 @@ class FloatingButton(QWidget):
     Button position is NEVER affected by sidebar show/hide.
     """
 
-    SIZE = 40  # default 40x40
+    SIZE = 64
 
     def __init__(self, app):
         super().__init__()
@@ -25,13 +25,10 @@ class FloatingButton(QWidget):
         self._paths = AppPaths()
 
         # ── window flags ──────────────────────────────────────────────────
-        # Tool type on GNOME/Wayland keeps the button visible across ALL
-        # workspaces (unlike Window type which is workspace-bound).
-        # WindowStaysOnTopHint keeps it above other windows.
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
+            | Qt.WindowType.Window
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
@@ -58,9 +55,8 @@ class FloatingButton(QWidget):
         self._hovered = False
 
         # ── alpha paint (Wayland-safe, no setWindowOpacity) ───────────────
-        self._resting_alpha = 0.5  # saved opacity level (non-hovered)
-        self._current_alpha = 0.5  # current paint alpha (0.0–1.0)
-        self._target_alpha = 0.5  # target for smooth animation (0.0–1.0)
+        self._current_alpha = 0.5  # Default 50% opacity
+        self._target_alpha = 0.5
 
         # ── keyboard shortcut ─────────────────────────────────────────────
         self._shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
@@ -71,23 +67,28 @@ class FloatingButton(QWidget):
         self._anim_timer.timeout.connect(self._tick_alpha)
         self._anim_timer.start(16)
 
-        # ---- workspace tracking ----
-        # Every 3 s, if sidebar is closed, force hide/show to
-        # re-map the window onto the current GNOME workspace.
-        self._ws_timer = QTimer(self)
-        self._ws_timer.timeout.connect(self._reapply_workspace)
-        self._ws_timer.start(3000)
+        # ── force native window, then show (loads settings + position) ────
+        self.winId()                # create native wl_surface + xdg-surface
+        self._show_button()
+        logging.info("[FloatingButton] Initialised")
 
-        # ── force native window, position, then show ──────────────────
-        self.winId()  # create native wl_surface + xdg-surface
-        self._load_settings()  # load ALL: opacity, size, position, sidebar dims
+    # ── unified show method (always respects saved settings) ───────────────
+
+    def _show_button(self):
+        """Show the button icon with saved opacity, size, and position from settings.
+
+        This is the ONE place that controls how the button appears.
+        Every code path that needs to show the button MUST call this method
+        to guarantee opacity / size / position are always loaded from config.
+        """
+        self._load_position()       # restore saved position (x, y)
+        self._load_settings()       # restore opacity + size from settings
         self.show()
         self.raise_()
-
-        # Re-apply opacity after GUI fully settles (1s)
-        QTimer.singleShot(1000, self._reapply_opacity)
-
-        logging.info("[FloatingButton] Initialised")
+        logging.info(
+            f"[FloatingButton] Button shown: opacity={self._current_alpha:.0%}, "
+            f"size={self.SIZE}px, pos=({self.x()},{self.y()})"
+        )
 
     # ── lazy sidebar ───────────────────────────────────────────────────────
 
@@ -97,7 +98,7 @@ class FloatingButton(QWidget):
             self._sidebar.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint
                 | Qt.WindowType.WindowStaysOnTopHint
-                | Qt.WindowType.Tool
+                | Qt.WindowType.Window
             )
             self._sidebar.resizeRequested.connect(self._on_sidebar_resize)
             self._sidebar.resizeHeightRequested.connect(self._on_sidebar_height_resize)
@@ -111,7 +112,9 @@ class FloatingButton(QWidget):
     # ── paint ──────────────────────────────────────────────────────────────
 
     def paintEvent(self, event):
-        alpha = min(255, max(0, int(self._current_alpha * 255)))
+        alpha = int(self._current_alpha * 255)
+        if self._hovered:
+            logging.debug(f"[FloatingButton] paintEvent: hovered=True, alpha={alpha}, _current_alpha={self._current_alpha}")
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -149,15 +152,7 @@ class FloatingButton(QWidget):
 
         painter.end()
 
-    # ── helpers ────────────────────────────────────────────────────────────
-
-    def _reapply_opacity(self):
-        """Re-apply resting alpha after GUI has fully initialised."""
-        self._set_target_alpha(self._resting_alpha)
-        self._current_alpha = self._resting_alpha
-        self._target_alpha = self._resting_alpha
-        self.update()
-        logging.debug(f"[FloatingButton] Opacity re-applied: {self._resting_alpha:.2f}")
+    # ── alpha helpers ───────────────────────────────────────────────────────
 
     def _set_target_alpha(self, ratio):
         """Set target alpha (0.0 = transparent, 1.0 = opaque)."""
@@ -197,21 +192,20 @@ class FloatingButton(QWidget):
                 self._save_position()
             else:
                 self._toggle_sidebar()
-            # Restore to resting alpha (hover re-applies 1.0 via enterEvent)
-            self._set_target_alpha(self._resting_alpha)
+            self._set_target_alpha(0.70 if self._hovered else 0.50)
             self.update()
 
-    # ---- hover ----
+    # ── hover ───────────────────────────────────────────────────────────────
 
     def enterEvent(self, event):
         self._hovered = True
-        self._set_target_alpha(1.0)
+        self._set_target_alpha(0.85)
         self.update()
 
     def leaveEvent(self, event):
         self._hovered = False
         if not self._dragging:
-            self._set_target_alpha(self._resting_alpha)
+            self._set_target_alpha(0.50)
         self.update()
 
     # ── sidebar toggle ─────────────────────────────────────────────────────
@@ -316,10 +310,11 @@ class FloatingButton(QWidget):
     def set_opacity(self, alpha_percent):
         """Set button opacity (0-100).
 
-        Updates resting alpha (used when not hovered) and saves to JSON.
+        Args:
+            alpha_percent: Opacity percentage (0 = fully transparent, 100 = opaque)
         """
         alpha = alpha_percent / 100.0
-        self._resting_alpha = alpha
+        # Set both current and target for immediate effect
         self._current_alpha = alpha
         self._target_alpha = alpha
         self.update()
@@ -336,9 +331,11 @@ class FloatingButton(QWidget):
             logging.warning(f"[FloatingButton] Invalid size {size} (valid: 32-128)")
             return
 
+        # Update SIZE constant
         self.SIZE = size
         self.setFixedSize(size, size)
 
+        # Reload and reposition to ensure proper placement
         self._load_position()
         self.update()
 
@@ -349,7 +346,8 @@ class FloatingButton(QWidget):
         """Toggle the FloatingButton window itself (show/hide).
 
         When hiding, also hides the sidebar and saves position.
-        When showing, reloads position and restores the window.
+        When showing, uses _show_button() to reload saved settings
+        (opacity, size, position) instead of hardcoding defaults.
         Use this from tray icon menu.
         """
         if self.isVisible():
@@ -360,11 +358,7 @@ class FloatingButton(QWidget):
             self.hide()
         else:
             logging.info("[FloatingButton] Showing button (tray toggle)")
-            self._load_position()
-            self.show()
-            self.raise_()
-            self._set_target_alpha(self._resting_alpha)
-            self.update()
+            self._show_button()
 
     def _save_settings(self, updates):
         """Update settings in button_pos.json (merge with existing data)."""
@@ -378,61 +372,27 @@ class FloatingButton(QWidget):
         logging.info(f"[FloatingButton] Settings saved: {updates}")
 
     def _load_settings(self):
-        """Load ALL settings from button_pos.json; write defaults if missing."""
+        """Load opacity and size from button_pos.json."""
         try:
             data = json.loads(self._paths.read('button_pos.json'))
-        except Exception:
-            data = {}  # file missing or corrupt → create with defaults
 
-        needs_save = False
+            # Load opacity (default 50%)
+            opacity = data.get('opacity', 50)
+            alpha = opacity / 100.0
+            self._current_alpha = alpha
+            self._target_alpha = alpha
 
-        # ── opacity (0–100%) → resting alpha (0.0–1.0) ─────────
-        opacity = data.get('opacity')
-        if opacity is None or not isinstance(opacity, (int, float)) or opacity < 0 or opacity > 100:
-            opacity = 50
-            data['opacity'] = opacity
-            needs_save = True
-        self._resting_alpha = opacity / 100.0
-        self._current_alpha = self._resting_alpha
-        self._target_alpha = self._resting_alpha
+            # Load size (default 64)
+            size = data.get('size', 64)
+            if size != self.SIZE:
+                self.SIZE = size
+                self.setFixedSize(size, size)
 
-        # ── button icon size ────────────────────────────────────
-        size = data.get('size')
-        if size is None or not isinstance(size, int) or size < 32 or size > 128:
-            size = 40
-            data['size'] = size
-            needs_save = True
-        if size != self.SIZE:
-            self.SIZE = size
-            self.setFixedSize(size, size)
-
-        # ── sidebar dimensions ──────────────────────────────────
-        self._sidebar_w = data.get('sidebar_w', self._sidebar_w)
-        self._sidebar_h = data.get('sidebar_h', self._sidebar_h)
-
-        # ── button position (with screen bounds check) ──────────
-        x, y = data.get('x', None), data.get('y', None)
-        if x is not None and y is not None:
-            test_rect = QRect(x, y, self.SIZE, self.SIZE)
-            on_screen = any(
-                s.geometry().intersects(test_rect) for s in QApplication.screens()
-            )
-            if on_screen:
-                self._move_to(x, y)
-            else:
-                self._place_default()
-        else:
-            self._place_default()
-
-        # Save defaults to disk if any were just populated
-        if needs_save:
-            self._paths.write('button_pos.json', json.dumps(data, indent=2))
-            logging.info("[FloatingButton] Defaults written to button_pos.json")
-
-        logging.info(
-            f"[FloatingButton] Settings loaded: opacity={opacity}%, size={size}px, "
-            f"pos=({x},{y}), sidebar={self._sidebar_w}x{self._sidebar_h}"
-        )
+            logging.info(f"[FloatingButton] Settings loaded: opacity={opacity}%, size={size}px")
+            return opacity, size
+        except Exception as e:
+            logging.warning(f"[FloatingButton] Failed to load settings: {e}")
+            return 50, 64
 
     def get_opacity(self):
         """Get current opacity as percentage (0-100)."""
@@ -447,6 +407,7 @@ class FloatingButton(QWidget):
         return self.SIZE
 
     def _save_position(self):
+        # Merge with existing settings to preserve opacity/size
         try:
             existing = json.loads(self._paths.read('button_pos.json'))
         except Exception:
@@ -464,37 +425,7 @@ class FloatingButton(QWidget):
         except Exception as e:
             logging.error(f"[FloatingButton] Save position failed: {e}")
 
-    # ---- workspace tracking ----
-
-    def _reapply_workspace(self):
-        """Force re-map on the current GNOME workspace.
-
-        hide() + show() triggers a full xdg-toplevel map cycle, which
-        makes the compositor place the Tool window on the current (active)
-        workspace.  Crucially, both calls happen in the SAME event-loop
-        iteration — the Wayland protocol sends unmap + map in a single
-        socket batch, so the compositor processes both before rendering
-        the next frame.  Result: zero visible flicker."""
-        if not self.isVisible() or self._sidebar_visible:
-            return
-        # Reset hover state — on workspace switch, leaveEvent never fires
-        # because Wayland hides the window without notifying Qt.
-        self._hovered = False
-        self.hide()
-        self.show()
-        self.raise_()
-        # show() resets window opacity to 1.0 — re-apply immediately
-        target = 1.0 if self._hovered else self._resting_alpha
-        self._current_alpha = target
-        self._set_target_alpha(target)
-        self.update()
-
     def _load_position(self):
-        """Reload position + sidebar dims from button_pos.json.
-
-        Used by toggle_button() / set_size() to re-apply saved state
-        after the window was hidden or resized.
-        """
         path = self._get_pos_file()
         if not os.path.exists(path):
             self._place_default()
@@ -502,9 +433,7 @@ class FloatingButton(QWidget):
         try:
             with open(path) as f:
                 data = json.load(f)
-            self._sidebar_w = data.get('sidebar_w', self._sidebar_w)
-            self._sidebar_h = data.get('sidebar_h', self._sidebar_h)
-            x, y = data.get('x', self.x()), data.get('y', self.y())
+            x, y = data.get('x', 0), data.get('y', 0)
             test_rect = QRect(x, y, self.SIZE, self.SIZE)
             on_screen = any(
                 s.geometry().intersects(test_rect) for s in QApplication.screens()
@@ -513,6 +442,9 @@ class FloatingButton(QWidget):
                 self._move_to(x, y)
             else:
                 raise ValueError("off-screen")
+            # Restore sidebar dimensions (0 = use defaults on first show)
+            self._sidebar_w = data.get('sidebar_w', 0)
+            self._sidebar_h = data.get('sidebar_h', 0)
         except Exception:
             self._place_default()
 
