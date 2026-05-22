@@ -25,10 +25,13 @@ class FloatingButton(QWidget):
         self._paths = AppPaths()
 
         # ── window flags ──────────────────────────────────────────────────
+        # Tool type on GNOME/Wayland keeps the button visible across ALL
+        # workspaces (unlike Window type which is workspace-bound).
+        # WindowStaysOnTopHint keeps it above other windows.
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Window
+            | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
@@ -57,7 +60,7 @@ class FloatingButton(QWidget):
         # ── alpha paint (Wayland-safe, no setWindowOpacity) ───────────────
         self._resting_alpha = 0.5  # saved opacity level (non-hovered)
         self._current_alpha = 0.5  # current paint alpha (0.0–1.0)
-        self._target_alpha = 0.5   # target for smooth animation (0.0–1.0)
+        self._target_alpha = 0.5  # target for smooth animation (0.0–1.0)
 
         # ── keyboard shortcut ─────────────────────────────────────────────
         self._shortcut = QShortcut(QKeySequence("Ctrl+Shift+F"), self)
@@ -69,8 +72,8 @@ class FloatingButton(QWidget):
         self._anim_timer.start(16)
 
         # ── force native window, position, then show ──────────────────
-        self.winId()                # create native wl_surface + xdg-surface
-        self._load_settings()       # load ALL: opacity, size, position, sidebar dims
+        self.winId()  # create native wl_surface + xdg-surface
+        self._load_settings()  # load ALL: opacity, size, position, sidebar dims
         self.show()
         self.raise_()
 
@@ -87,7 +90,7 @@ class FloatingButton(QWidget):
             self._sidebar.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint
                 | Qt.WindowType.WindowStaysOnTopHint
-                | Qt.WindowType.Window
+                | Qt.WindowType.Tool
             )
             self._sidebar.resizeRequested.connect(self._on_sidebar_resize)
             self._sidebar.resizeHeightRequested.connect(self._on_sidebar_height_resize)
