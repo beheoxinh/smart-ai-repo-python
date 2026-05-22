@@ -482,14 +482,20 @@ class FloatingButton(QWidget):
         has not re-entered the widget, re-show on the current workspace."""
         if not self.isVisible():
             return
-        if self._ws_lost_active_at == 0.0:
-            return
         now = time.time()
-        if now - self._ws_lost_active_at > 3.0:
-            if now - self._ws_reapply_debounce > 4.0:
-                self._ws_reapply_debounce = now
-                self._ws_lost_active_at = 0.0
-                self._reapply_workspace()
+        # Primary: activation-based detection
+        if self._ws_lost_active_at != 0.0:
+            if now - self._ws_lost_active_at > 3.0:
+                if now - self._ws_reapply_debounce > 4.0:
+                    self._ws_reapply_debounce = now
+                    self._ws_lost_active_at = 0.0
+                    self._reapply_workspace()
+        # Fallback: if no activation signal arrived at all (WA_ShowWithout-
+        # Activating prevents focus), force re-show every 20 s so the button
+        # eventually follows the workspace.
+        elif now - self._ws_reapply_debounce > 20.0:
+            self._ws_reapply_debounce = now
+            self._reapply_workspace()
 
     def _reapply_workspace(self):
         self.hide()
