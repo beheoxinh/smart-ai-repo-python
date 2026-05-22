@@ -80,6 +80,10 @@ def main():
 
         # ── manual refresh button ───────────────────────────────────────────
         refresh_action = QAction("Refresh")
+
+        def update_refresh_state():
+            refresh_action.setEnabled(btn.isVisible())
+
         refresh_action.triggered.connect(btn.refresh_button)
         tray_menu.addAction(refresh_action)
 
@@ -96,9 +100,13 @@ def main():
         def toggle_and_update():
             btn.toggle_button()
             update_show_action_text()
+            update_refresh_state()
 
         show_action.triggered.connect(toggle_and_update)
         tray_menu.addAction(show_action)
+
+        # Initial refresh state
+        update_refresh_state()
 
         tray_menu.addSeparator()
 

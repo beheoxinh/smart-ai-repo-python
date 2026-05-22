@@ -95,8 +95,18 @@ class FloatingButton(QWidget):
     # ── manual refresh ─────────────────────────────────────────────────────
 
     def refresh_button(self):
-        """Reload position, opacity, size from settings and re-show."""
-        logging.info("[FloatingButton] Manual refresh triggered")
+        """Hide then show the button, reloading position/opacity/size from settings.
+
+        Only does something if the button is currently visible.
+        """
+        if not self.isVisible():
+            logging.info("[FloatingButton] Refresh skipped — button is hidden")
+            return
+        logging.info("[FloatingButton] Manual refresh — hide + re-show")
+        self._save_position()
+        if self._sidebar_visible:
+            self._hide_sidebar()
+        self.hide()
         self._show_button()
 
     # ── lazy sidebar ───────────────────────────────────────────────────────
