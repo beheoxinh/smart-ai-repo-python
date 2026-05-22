@@ -78,6 +78,7 @@ def main():
 
         # ── floating button (creates its own window + lazy sidebar) ────────
         btn = FloatingButton(app)
+        app.aboutToQuit.connect(btn._save_position)
 
         show_action = QAction("Hide Float Button")
         

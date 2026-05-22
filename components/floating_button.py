@@ -269,9 +269,13 @@ class FloatingButton(QWidget):
         self._sidebar_w = new_w
         if self._sidebar is not None:
             self._sidebar.setFixedWidth(new_w)
+        self._save_settings({'sidebar_w': new_w})
 
     def _on_sidebar_height_resize(self, new_h):
         self._sidebar_h = new_h
+        if self._sidebar is not None:
+            self._sidebar.setFixedHeight(new_h)
+        self._save_settings({'sidebar_h': new_h})
 
     def _move_to(self, x, y):
         """Move window using native QWindow API (reliable on Wayland pre-map)."""
