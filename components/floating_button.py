@@ -95,7 +95,7 @@ class FloatingButton(QWidget):
     # ── paint ──────────────────────────────────────────────────────────────
 
     def paintEvent(self, event):
-        alpha = self._current_alpha
+        alpha = int(self._current_alpha * 255)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
