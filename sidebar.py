@@ -130,8 +130,6 @@ class Sidebar(QMainWindow):
     def init_ui(self):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.Tool |
-            Qt.WindowType.X11BypassWindowManagerHint |
             Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -179,7 +177,51 @@ class Sidebar(QMainWindow):
 
         self.active_screen = self.get_target_screen()
         self.setStyleSheet("QMainWindow { background-color: #33322F; }")
+        
+        if sys.platform == "linux" and QApplication.platformName() == 'xcb':
+            self._set_as_dock_linux()
+            
         self.hide_sidebar(initial=True, reason="initial")
+
+    def _set_as_dock_linux(self):
+        """Set _NET_WM_WINDOW_TYPE_DOCK to prevent window appearing in taskbar and to keep it on top."""
+        try:
+            import ctypes
+            x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+            
+            # Khai báo kiểu dữ liệu bắt buộc để tránh crash trên hệ thống 64-bit
+            x11.XOpenDisplay.restype = ctypes.c_void_p
+            x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+            
+            x11.XInternAtom.restype = ctypes.c_ulong
+            x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+            
+            x11.XChangeProperty.argtypes = [
+                ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong,
+                ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_int
+            ]
+            x11.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+            x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+            
+            display = x11.XOpenDisplay(None)
+            if not display: return
+            
+            win_id = int(self.winId())
+            atom_name = b"_NET_WM_WINDOW_TYPE"
+            type_name = b"_NET_WM_WINDOW_TYPE_DOCK"
+            
+            atom = x11.XInternAtom(display, atom_name, False)
+            dock_type = x11.XInternAtom(display, type_name, False)
+            
+            data = (ctypes.c_ulong * 1)(dock_type)
+            x11.XChangeProperty(display, win_id, atom, 4, 32, 2, 
+                               ctypes.cast(data, ctypes.c_void_p), 1)
+            
+            x11.XSync(display, 0)
+            x11.XCloseDisplay(display)
+            logging.info(f"[X11] Window {win_id} set to DOCK type")
+        except Exception as e:
+            logging.error(f"Failed to set DOCK type: {e}")
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -260,12 +302,6 @@ class Sidebar(QMainWindow):
             self._x11_lib.XSync(display, 0)
             self._x11_lib.XCloseDisplay(display)
 
-            # Force GNOME Mutter to hand over keyboard focus to our bypassed window using wmctrl
-            hex_id = hex(win_id)
-            wmctrl_path = shutil.which('wmctrl')
-            if wmctrl_path:
-                subprocess.Popen([wmctrl_path, '-i', '-a', hex_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
             # Simulate a harmless modifier key event (Shift) directly to the webview.
             # This is 100% crash-proof and forces Chromium's focus engine to wake up 
             # and activate the input fields without corrupting C++ memory.
@@ -289,13 +325,14 @@ class Sidebar(QMainWindow):
         if self.is_visible: return
         self.is_visible = True
         self.last_show_time = time.time()
+        
+        # Expand geometry first
+        self.update_position()
+        
         if hasattr(self, 'main_ui_container'):
             self.main_ui_container.show()
-            self.main_ui_container.setMinimumWidth(200)
         if hasattr(self, 'resize_handle'): self.resize_handle.show()
 
-        self.update_position()
-        self.setWindowOpacity(1.0)
         self.raise_()
         self.activateWindow()
 
@@ -310,27 +347,27 @@ class Sidebar(QMainWindow):
         QTimer.singleShot(500, lambda: self._grab_focus_linux(forced=True))
 
     def hide_sidebar(self, initial=False, reason="manual"):
-        if not initial and (self.is_resizing or not self.is_visible): return
-        if not initial and (time.time() - self.last_show_time) < 0.5: return
+        if not initial and not self.is_visible: return
+        
+        # Safety cooldown
+        if not initial and (time.time() - self.last_show_time) < 0.3: return
 
         # Stop Focus Watchdog Loop to avoid stealing focus when hidden
         self.focus_watchdog_timer.stop()
 
-        self.setWindowOpacity(0.01)
-
-        def finalize_hide():
-            self.is_visible = False
-            if hasattr(self, 'main_ui_container'):
-                self.main_ui_container.hide()
-                self.main_ui_container.setMinimumWidth(0)
-            if hasattr(self, 'resize_handle'): self.resize_handle.hide()
-            self.update_position()
-
-        if not initial:
-            QTimer.singleShot(50, finalize_hide)
-        else:
-            finalize_hide();
-            self.show()
+        self.is_visible = False
+        
+        # Hide internal content but keep window mapped
+        if hasattr(self, 'main_ui_container'):
+            self.main_ui_container.hide()
+        if hasattr(self, 'resize_handle'): 
+            self.resize_handle.hide()
+            
+        # Contract to 1-pixel pillar
+        self.update_position()
+        
+        if initial:
+            self.show() # First time call show() to map window, then we never hide() it
 
     def handle_popup_created(self, popup_window):
         self.popup_windows.append(popup_window)
@@ -351,7 +388,16 @@ class Sidebar(QMainWindow):
 
     def enterEvent(self, event):
         self.last_mouse_in_time = time.time()
+        
+        # Tự động nhảy sang màn hình có chuột nếu đang ẩn
         if not self.is_visible:
+            cursor_pos = QCursor.pos()
+            screen_with_mouse = QApplication.screenAt(cursor_pos)
+            if screen_with_mouse and screen_with_mouse != self.active_screen:
+                self.active_screen = screen_with_mouse
+                self.update_position()
+                logging.info(f"[Screen] Jumped to screen: {screen_with_mouse.name()}")
+            
             curr_y = event.position().y()
             self.gesture_entry_y = curr_y;
             self.gesture_min_y = curr_y;
@@ -389,11 +435,29 @@ class Sidebar(QMainWindow):
             self.show_sidebar()
 
     def update_position(self, _=None):
-        screen = self.get_target_screen()
+        # Ưu tiên sử dụng active_screen (đã được set manual hoặc auto)
+        if self.active_screen:
+            screen = self.active_screen
+        else:
+            screen = self.get_target_screen()
+            self.active_screen = screen
+
         if not screen: return
         geom = screen.geometry()
-        target_w = self.last_width or int(geom.width() * 0.5) if self.is_visible else 5
-        self.setGeometry(geom.x() + geom.width() - target_w, geom.y(), target_w, geom.height())
+
+        # 1-pixel pillar when "hidden"
+        target_w = self.last_width if self.is_visible else 1
+
+        # Đảm bảo sát mép phải tuyệt đối: x = x_gốc + chiều_rộng_màn_hình - chiều_rộng_sidebar
+        new_x = geom.x() + geom.width() - target_w
+        new_y = geom.y()
+        new_h = geom.height()
+
+        # Sử dụng setGeometry kèm theo fix cứng toạ độ
+        self.setGeometry(new_x, new_y, target_w, new_h)
+        
+        # Debug log để kiểm tra toạ độ thực tế
+        logging.info(f"[Pos] Using Screen '{screen.name()}': {geom.x()},{geom.y()} {geom.width()}x{geom.height()} -> Sidebar X: {new_x}, W: {target_w}")
 
     def on_nav_menu_state_changed(self, is_open):
         self.is_nav_menu_open = is_open
@@ -436,3 +500,12 @@ class Sidebar(QMainWindow):
 
     def handle_navigation(self, url):
         self.content_widget.web_view.setUrl(QUrl(url))
+
+    def set_manual_screen(self, index):
+        """Cho phép main.py ép sidebar hiển thị trên một màn hình cụ thể."""
+        screens = QApplication.screens()
+        if 0 <= index < len(screens):
+            self.manual_screen_index = index
+            self.active_screen = screens[index]
+            logging.info(f"[Screen] Manually set to screen {index}: {self.active_screen.name()}")
+            self.update_position()
