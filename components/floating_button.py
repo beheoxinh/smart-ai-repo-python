@@ -11,13 +11,13 @@ from components.sidebar_panel import SidebarPanel
 
 
 class FloatingButton(QWidget):
-    """Single window: icon (left) + optional sidebar (right).
+    """Single window: sidebar (left) + floating icon (right).
 
     Collapsed:  64×64 window (icon only).
-    Expanded:   (64 + sidebar_w) × 600 px — sidebar right of the icon.
+    Expanded:   (sidebar_w + 64) × 600 px — sidebar left of icon.
 
-    The icon NEVER moves.  Window grows right on show, shrinks on hide.
-    No screen-geometry anchoring, no forced positioning.
+    Icon's screen position is anchored — window shifts left on show
+    so the icon (right edge) stays exactly where it was.
     """
 
     SIZE = 64
@@ -44,16 +44,17 @@ class FloatingButton(QWidget):
         if self._icon.isNull():
             logging.error(f"[FloatingButton] Cannot load icon: {icon_path}")
 
-        # ── sidebar panel (embedded child, right of icon) ─────────────────
+        # ── sidebar panel (embedded child, LEFT of icon) ──────────────────
         self._sidebar = SidebarPanel(self)
         self._sidebar.setVisible(False)
         self._sidebar_w = self.MIN_SIDEBAR_WIDTH
         self._sidebar_visible = False
+        self._icon_anchor = QPoint()   # saved so we can restore position
 
         self._sidebar.resizeRequested.connect(self._on_sidebar_resize)
         self._sidebar.closeRequested.connect(self._on_sidebar_close)
 
-        # ── layout: icon area (left 64px) → sidebar (remaining) ──────────
+        # ── layout: sidebar (left) → icon (right 64px) ───────────────────
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
@@ -83,17 +84,19 @@ class FloatingButton(QWidget):
         self.setFixedSize(self.SIZE, self.SIZE)
         self.show()
         self.raise_()
-        logging.info("[FloatingButton] Initialised")
+        logging.info("[FloatingButton] Initialised (icon-right)")
 
     # ── paint ──────────────────────────────────────────────────────────────
 
     def paintEvent(self, event):
-        """Paint the icon circle at the LEFT edge of the window."""
+        """Paint the icon circle at the RIGHT edge of the window."""
         alpha = self._current_alpha
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        btn_rect = QRect(0, 0, self.SIZE, self.SIZE)
+        # Button is always in the rightmost SIZE pixels
+        btn_x = self.width() - self.SIZE
+        btn_rect = QRect(btn_x, 0, self.SIZE, self.SIZE)
         painter.setClipRect(btn_rect)
         r = btn_rect.adjusted(2, 2, -2, -2)
 
@@ -119,7 +122,7 @@ class FloatingButton(QWidget):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            cx = (btn_rect.width() - scaled.width()) // 2
+            cx = btn_rect.x() + (btn_rect.width() - scaled.width()) // 2
             cy = (btn_rect.height() - scaled.height()) // 2
 
             tinted = QPixmap(scaled.size())
@@ -191,7 +194,7 @@ class FloatingButton(QWidget):
             self._set_target_alpha(0.50)
         self.update()
 
-    # ── sidebar toggle (icon NEVER moves) ──────────────────────────────────
+    # ── sidebar toggle ─────────────────────────────────────────────────────
 
     def _toggle_sidebar(self):
         if self._sidebar_visible:
@@ -200,31 +203,55 @@ class FloatingButton(QWidget):
             self._show_sidebar()
 
     def _show_sidebar(self):
-        """Expand window rightward — icon stays at its current position."""
+        """Expand window leftward — icon's screen position stays anchored."""
         self._sidebar_visible = True
+        # Save where the icon is right now (right edge of current window)
+        self._icon_anchor = QPoint(self.x(), self.y())
+
         window_w = self.SIZE + self._sidebar_w
         window_h = 600
+
         self._sidebar.show_content()
         self._sidebar.setFixedWidth(self._sidebar_w)
+
+        # Shift window left so the right edge (icon) stays put
+        new_x = self._icon_anchor.x() - self._sidebar_w
         self.setFixedSize(window_w, window_h)
-        logging.info(f"[FloatingButton] Sidebar shown: {window_w}x{window_h}")
+        self._move_to(new_x, self._icon_anchor.y())
+
+        logging.info(
+            f"[FloatingButton] Sidebar shown: {window_w}x{window_h} @ "
+            f"({new_x},{self._icon_anchor.y()})"
+        )
 
     def _hide_sidebar(self):
-        """Shrink back to icon-only — icon never moved."""
+        """Shrink back to icon-only at the saved anchor position."""
         self._sidebar_visible = False
         self._sidebar.hide_content()
         self.setFixedSize(self.SIZE, self.SIZE)
+        self._move_to(self._icon_anchor.x(), self._icon_anchor.y())
         self.update()
         logging.info("[FloatingButton] Sidebar hidden")
+
+    def _move_to(self, x, y):
+        """Move window, preferring native QWindow API on Wayland."""
+        wh = self.windowHandle()
+        if wh is not None:
+            wh.setGeometry(QRect(x, y, self.width(), self.height()))
+        else:
+            self.move(x, y)
 
     def _on_sidebar_close(self):
         self._hide_sidebar()
 
     def _on_sidebar_resize(self, new_w):
-        """Resize handle — icon stays put, sidebar width changes."""
+        """Resize handle — icon stays at its screen anchor."""
+        delta = new_w - self._sidebar_w
         self._sidebar_w = new_w
         self._sidebar.setFixedWidth(new_w)
-        self.setFixedSize(self.SIZE + new_w, self.height())
+        window_w = self.SIZE + new_w
+        self.setFixedSize(window_w, self.height())
+        self._move_to(self.x() - delta, self.y())
 
     # ── position persistence ───────────────────────────────────────────────
 
