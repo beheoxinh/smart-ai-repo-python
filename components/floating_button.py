@@ -75,7 +75,7 @@ class FloatingButton(QWidget):
 
     def _get_sidebar(self):
         if self._sidebar is None:
-            self._sidebar = SidebarPanel()
+            self._sidebar = SidebarPanel(self)
             self._sidebar.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint
                 | Qt.WindowType.WindowStaysOnTopHint
@@ -203,9 +203,9 @@ class FloatingButton(QWidget):
     def _show_sidebar(self):
         """Show sidebar flush against the RIGHT edge of the current screen.
 
-        The button gets pushed to the left of the sidebar so both are
-        docked at the right edge.  Once placed, the button stays there
-        (position saved) — subsequent show/hide doesn't move it.
+        Uses Qt parent relationship (SidebarPanel self as parent) so Wayland
+        keeps the sidebar on the same screen as the button and positions it
+        at our desired coordinates.
         """
         self._sidebar_visible = True
         sidebar = self._get_sidebar()
@@ -220,7 +220,7 @@ class FloatingButton(QWidget):
             # Button immediately to the left of sidebar
             btn_x = sx - self.SIZE
             sy = max(sg.y(), min(self.y(), sg.y() + sg.height() - 600))
-            # Move the button first
+            # Move button first (Wayland: approximate but saved for next time)
             wh = self.windowHandle()
             if wh is not None:
                 wh.setGeometry(QRect(btn_x, self.y(), self.SIZE, self.SIZE))
@@ -228,12 +228,19 @@ class FloatingButton(QWidget):
                 self.move(btn_x, self.y())
             self._save_position()
         else:
-            # Fallback: right of button
             sx = self.x() + self.SIZE
             sy = self.y()
 
-        sidebar.show_content()
+        # Force native handle creation, set transient parent relationship
+        sidebar.winId()
+        sidebar_wh = sidebar.windowHandle()
+        btn_wh = self.windowHandle()
+        if sidebar_wh and btn_wh:
+            sidebar_wh.setTransientParent(btn_wh)
+
+        # Set geometry BEFORE showing — Wayland compositor gets the hint on first commit
         sidebar.setGeometry(sx, sy, sidebar_w, 600)
+        sidebar.show_content()
         sidebar.show()
         sidebar.raise_()
 
