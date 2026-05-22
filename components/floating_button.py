@@ -65,9 +65,9 @@ class FloatingButton(QWidget):
         self._anim_timer.timeout.connect(self._tick_alpha)
         self._anim_timer.start(16)
 
-        # ── position from persistence (BEFORE show — Wayland honors pre-map) ──
-        self._load_position()
-
+        # ── force native window, position, then show ──────────────────
+        self.winId()                # create native wl_surface + xdg-surface
+        self._load_position()       # set geometry via QWindow.setGeometry
         self.show()
         self.raise_()
         logging.info("[FloatingButton] Initialised")
@@ -282,6 +282,14 @@ class FloatingButton(QWidget):
     def _on_sidebar_height_resize(self, new_h):
         self._sidebar_h = new_h
 
+    def _move_to(self, x, y):
+        """Move window using native QWindow API (reliable on Wayland pre-map)."""
+        wh = self.windowHandle()
+        if wh is not None:
+            wh.setGeometry(QRect(x, y, self.width(), self.height()))
+        else:
+            self.move(x, y)
+
     # ── position persistence ───────────────────────────────────────────────
 
     def _get_pos_file(self):
@@ -314,7 +322,7 @@ class FloatingButton(QWidget):
                 s.geometry().intersects(test_rect) for s in QApplication.screens()
             )
             if on_screen:
-                self.move(x, y)
+                self._move_to(x, y)
             else:
                 raise ValueError("off-screen")
             # Restore sidebar dimensions (0 = use defaults on first show)
@@ -327,7 +335,7 @@ class FloatingButton(QWidget):
         screen = QApplication.primaryScreen()
         if screen:
             g = screen.geometry()
-            self.move(
+            self._move_to(
                 g.x() + g.width() - self.SIZE - 20,
                 g.y() + g.height() // 2 - self.SIZE // 2,
             )
