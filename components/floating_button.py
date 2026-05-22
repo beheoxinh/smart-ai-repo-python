@@ -3,7 +3,7 @@ import logging
 import os
 
 from PyQt6.QtCore import Qt, QPoint, QTimer, QRect
-from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QLinearGradient
+from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush
 from PyQt6.QtWidgets import QWidget, QApplication
 
 from utils import AppPaths
@@ -18,7 +18,7 @@ class FloatingButton(QWidget):
     The existing edge-hover reveal logic is preserved.
     """
 
-    SIZE = 56
+    SIZE = 64
     MARGIN = 20
 
     def __init__(self, sidebar, parent=None):
@@ -27,13 +27,16 @@ class FloatingButton(QWidget):
         self._paths = AppPaths()
 
         # --- window flags ---
+        # NOTE: avoid Tool flag on X11/Wayland — it can hide the window.
+        # Plain FramelessWindowHint + StaysOnTopHint is the most reliable combo.
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
-            | Qt.WindowType.Tool
+            | Qt.WindowType.Window
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_MouseTracking, True)
 
         self.setFixedSize(self.SIZE, self.SIZE)
 
@@ -49,11 +52,18 @@ class FloatingButton(QWidget):
         self._drag_offset = QPoint()
         self._hovered = False
 
-        self._target_opacity = 0.50
-        self.setWindowOpacity(0.50)
+        # Start fully opaque + red border so user can locate it
+        self._target_opacity = 0.90
+        self.setWindowOpacity(0.90)
+        self._show_red_border = True  # debug aid, set False later
 
         # --- initial position ---
         self._load_position()
+        # log the actual position for debugging
+        logging.info(
+            f"[FloatingButton] Positioned at ({self.x()}, {self.y()}) "
+            f"on screen: {QApplication.screenAt(self.geometry().center())}"
+        )
 
         # --- opacity animation timer ---
         self._anim_timer = QTimer(self)
@@ -61,7 +71,8 @@ class FloatingButton(QWidget):
         self._anim_timer.start(16)  # ~60 fps
 
         self.show()
-        logging.info("[FloatingButton] Initialized")
+        self.raise_()
+        logging.info("[FloatingButton] Shown and raised")
 
     # ── paint ──────────────────────────────────────────────────────────────────
 
@@ -71,27 +82,29 @@ class FloatingButton(QWidget):
 
         r = self.rect().adjusted(2, 2, -2, -2)
 
+        # --- debug: red border full rect ---
+        if self._show_red_border:
+            painter.setPen(QPen(QColor(255, 0, 0), 3))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(self.rect().adjusted(1, 1, -1, -1))
+
         # subtle shadow
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 50))
+        painter.setBrush(QColor(0, 0, 0, 60))
         painter.drawEllipse(r.translated(0, 2))
 
         # background gradient
-        grad = QLinearGradient(r.topLeft(), r.bottomRight())
+        painter.setBrush(QBrush(QColor(50, 50, 58)))  # solid fallback
         if self._hovered or self._dragging:
-            grad.setColorAt(0, QColor(70, 140, 255, 230))
-            grad.setColorAt(1, QColor(110, 80, 230, 230))
+            painter.setBrush(QBrush(QColor(60, 120, 240)))
         else:
-            grad.setColorAt(0, QColor(50, 50, 55, 200))
-            grad.setColorAt(1, QColor(35, 35, 40, 220))
-
-        painter.setBrush(QBrush(grad))
-        painter.setPen(QPen(QColor(255, 255, 255, 30), 1.2))
+            painter.setBrush(QBrush(QColor(45, 45, 52)))
+        painter.setPen(QPen(QColor(255, 255, 255, 80), 1.5))
         painter.drawEllipse(r)
 
         # icon centered
         if self._icon and not self._icon.isNull():
-            icon_size = self.SIZE - 16
+            icon_size = self.SIZE - 20
             scaled = self._icon.scaled(
                 icon_size, icon_size,
                 Qt.AspectRatioMode.KeepAspectRatio,
@@ -109,7 +122,7 @@ class FloatingButton(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_start = event.globalPosition().toPoint()
             self._drag_offset = self._drag_start - self.pos()
-            self._target_opacity = 0.85
+            self._target_opacity = 1.0
             self.update()
 
     def mouseMoveEvent(self, event):
@@ -132,20 +145,20 @@ class FloatingButton(QWidget):
                 # Click (no meaningful drag) → toggle sidebar
                 self.sidebar.toggle_sidebar()
 
-            self._target_opacity = 0.70 if self._hovered else 0.50
+            self._target_opacity = 0.95 if self._hovered else 0.90
             self.update()
 
     # ── hover ──────────────────────────────────────────────────────────────────
 
     def enterEvent(self, event):
         self._hovered = True
-        self._target_opacity = 0.85
+        self._target_opacity = 1.0
         self.update()
 
     def leaveEvent(self, event):
         self._hovered = False
         if not self._dragging:
-            self._target_opacity = 0.50
+            self._target_opacity = 0.90
         self.update()
 
     # ── screen logic ───────────────────────────────────────────────────────────
