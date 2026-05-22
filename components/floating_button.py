@@ -70,7 +70,7 @@ class FloatingButton(QWidget):
         # ── force native window, position, then show ──────────────────
         self.winId()  # create native wl_surface + xdg-surface
         self._load_position()  # set geometry via QWindow.setGeometry
-        self._load_settings()  # restore opacity + size
+        self._load_settings()  # restore opacity + size + sidebar dims
         self.show()
         self.raise_()
         logging.info("[FloatingButton] Initialised")
@@ -359,7 +359,7 @@ class FloatingButton(QWidget):
         logging.info(f"[FloatingButton] Settings saved: {updates}")
 
     def _load_settings(self):
-        """Load opacity and size from button_pos.json."""
+        """Load opacity, size, and sidebar dimensions from button_pos.json."""
         try:
             data = json.loads(self._paths.read('button_pos.json'))
 
@@ -375,7 +375,14 @@ class FloatingButton(QWidget):
                 self.SIZE = size
                 self.setFixedSize(size, size)
 
-            logging.info(f"[FloatingButton] Settings loaded: opacity={opacity}%, size={size}px")
+            # Load sidebar dimensions (saved by _on_sidebar_resize / _on_sidebar_height_resize)
+            self._sidebar_w = data.get('sidebar_w', self._sidebar_w)
+            self._sidebar_h = data.get('sidebar_h', self._sidebar_h)
+
+            logging.info(
+                f"[FloatingButton] Settings loaded: opacity={opacity}%, size={size}px, "
+                f"sidebar={self._sidebar_w}x{self._sidebar_h}"
+            )
             return opacity, size
         except Exception as e:
             logging.warning(f"[FloatingButton] Failed to load settings: {e}")
@@ -420,6 +427,9 @@ class FloatingButton(QWidget):
         try:
             with open(path) as f:
                 data = json.load(f)
+            # Restore sidebar dimensions first — survive off-screen position
+            self._sidebar_w = data.get('sidebar_w', self._sidebar_w)
+            self._sidebar_h = data.get('sidebar_h', self._sidebar_h)
             x, y = data.get('x', 0), data.get('y', 0)
             test_rect = QRect(x, y, self.SIZE, self.SIZE)
             on_screen = any(
@@ -429,9 +439,6 @@ class FloatingButton(QWidget):
                 self._move_to(x, y)
             else:
                 raise ValueError("off-screen")
-            # Restore sidebar dimensions (0 = use defaults on first show)
-            self._sidebar_w = data.get('sidebar_w', 0)
-            self._sidebar_h = data.get('sidebar_h', 0)
         except Exception:
             self._place_default()
 
