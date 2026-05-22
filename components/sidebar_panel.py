@@ -17,8 +17,9 @@ class SidebarPanel(QWidget):
     Pure content widget that the parent FloatingButton resizes/positions.
     """
 
-    resizeRequested = pyqtSignal(int)  # new sidebar width from drag handle
-    closeRequested = pyqtSignal()  # from watchdog or close button
+    resizeRequested = pyqtSignal(int)   # new sidebar width from drag handle
+    resizeHeightRequested = pyqtSignal(int)  # new sidebar height from bottom drag
+    closeRequested = pyqtSignal()        # from watchdog or close button
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -49,16 +50,22 @@ class SidebarPanel(QWidget):
     # ── UI ─────────────────────────────────────────────────────────────
 
     def _init_ui(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        # Outer layout: horizontal row on top, bottom resize handle below
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # Horizontal row: left resize handle | main content
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(0)
 
         # Resize handle on the LEFT (between button and sidebar content)
         self.resize_handle = ResizeHandle(self)
         self.resize_handle.dragResized.connect(self._on_resize_drag)
         self.resize_handle.dragStarted.connect(lambda: setattr(self, 'is_resizing', True))
         self.resize_handle.dragFinished.connect(lambda: setattr(self, 'is_resizing', False))
-        layout.addWidget(self.resize_handle)
+        top_row.addWidget(self.resize_handle)
 
         # Main content area
         main_widget = QWidget()
@@ -90,7 +97,16 @@ class SidebarPanel(QWidget):
             self.on_webview_menu_state_changed
         )
 
-        layout.addWidget(main_widget)
+        top_row.addWidget(main_widget)
+        outer.addLayout(top_row)
+
+        # Bottom resize handle for vertical resize
+        self.bottom_handle = ResizeHandle(self, mode='vertical')
+        self.bottom_handle.dragResized.connect(self._on_vertical_resize_drag)
+        self.bottom_handle.dragStarted.connect(lambda: setattr(self, 'is_resizing', True))
+        self.bottom_handle.dragFinished.connect(lambda: setattr(self, 'is_resizing', False))
+        outer.addWidget(self.bottom_handle)
+
         self.setStyleSheet("background-color: #33322F;")
 
     # ── show / hide (called by FloatingButton) ─────────────────────────
@@ -195,3 +211,8 @@ class SidebarPanel(QWidget):
 
     def handle_navigation(self, url):
         self.content_widget.web_view.setUrl(QUrl(url))
+
+    # ── vertical resize ─────────────────────────────────────────────────
+
+    def _on_vertical_resize_drag(self, new_h):
+        self.resizeHeightRequested.emit(new_h)

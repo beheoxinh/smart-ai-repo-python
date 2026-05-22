@@ -83,6 +83,7 @@ class FloatingButton(QWidget):
                 | Qt.WindowType.Window
             )
             self._sidebar.resizeRequested.connect(self._on_sidebar_resize)
+            self._sidebar.resizeHeightRequested.connect(self._on_sidebar_height_resize)
             self._sidebar.closeRequested.connect(self._on_sidebar_close)
         return self._sidebar
 
@@ -204,7 +205,8 @@ class FloatingButton(QWidget):
     def _show_sidebar(self):
         """Show sidebar at right edge of screen, vertically centered on button.
 
-        Default size: 1/2 screen width × 2/3 screen height.
+        Default size: 1/2 screen width × 2/3 screen height on first show;
+        preserves custom size after user resize.
         Uses Qt parent + setTransientParent + geometry-before-show for Wayland.
         """
         self._sidebar_visible = True
@@ -214,11 +216,8 @@ class FloatingButton(QWidget):
         screen = QApplication.screenAt(self.geometry().center())
         if screen:
             sg = screen.geometry()
-            # Default size: 1/2 width, 2/3 height
-            sidebar_w = sg.width() // 2
-            sidebar_h = int(sg.height() * 2 / 3)
-            self._sidebar_w = sidebar_w
-            self._sidebar_h = sidebar_h
+            sidebar_w = self._sidebar_w or sg.width() // 2
+            sidebar_h = self._sidebar_h or int(sg.height() * 2 / 3)
 
             # Sidebar flush against right edge
             sx = sg.x() + sg.width() - sidebar_w
@@ -275,6 +274,9 @@ class FloatingButton(QWidget):
         self._sidebar_w = new_w
         if self._sidebar is not None:
             self._sidebar.setFixedWidth(new_w)
+
+    def _on_sidebar_height_resize(self, new_h):
+        self._sidebar_h = new_h
 
     # ── position persistence ───────────────────────────────────────────────
 
