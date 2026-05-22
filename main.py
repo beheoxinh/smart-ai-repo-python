@@ -2,6 +2,14 @@
 import os
 import sys
 
+# --- XWayland (XCB) override ---
+# GNOME Mutter (Wayland compositor) controls window positioning absolutely.
+# The application CANNOT set its own window position on native Wayland.
+# XCB backend forces Qt to use XWayland, where X11 window management
+# (move(), setGeometry()) works as the application intends.
+if os.environ.get("XDG_SESSION_TYPE") == "wayland":
+    os.environ["QT_QPA_PLATFORM"] = "xcb"
+
 # --- Stable Chromium Flags ---
 os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
