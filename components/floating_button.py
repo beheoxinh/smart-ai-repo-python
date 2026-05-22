@@ -10,25 +10,25 @@ from utils import AppPaths
 
 
 class FloatingButton(QWidget):
-    """Floating AI button -- drag to select monitor, click to toggle sidebar.
+    """Floating AI button — entry point widget.
 
-    Semi-transparent always-on-top widget that acts as a visual anchor
-    for the sidebar.  Wherever you drag this button, *that* monitor becomes
-    the sidebar's display target (calls ``sidebar.set_manual_screen()``).
-    The existing edge-hover reveal logic is preserved.
+    Always-on-top, draggable, semi-transparent.
+    Creates and manages the sidebar internally.
+
+    Drag → sets which monitor sidebar appears on.
+    Click → toggles sidebar visibility.
     """
 
     SIZE = 64
-    MARGIN = 20
+    MARGIN = 16
 
-    def __init__(self, sidebar, parent=None):
-        super().__init__(parent)
-        self.sidebar = sidebar
+    def __init__(self, app):
+        super().__init__()
+        self._app = app  # QApplication, for quitting
         self._paths = AppPaths()
+        self._sidebar = None  # created lazily on first click
 
         # --- window flags ---
-        # NOTE: avoid Tool flag on X11/Wayland — it can hide the window.
-        # Plain FramelessWindowHint + StaysOnTopHint is the most reliable combo.
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -36,7 +36,6 @@ class FloatingButton(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setAttribute(Qt.WidgetAttribute.WA_MouseTracking, True)
 
         self.setFixedSize(self.SIZE, self.SIZE)
 
@@ -52,29 +51,44 @@ class FloatingButton(QWidget):
         self._drag_offset = QPoint()
         self._hovered = False
 
-        # Start fully opaque + red border so user can locate it
+        # opacity animation
         self._target_opacity = 0.90
         self.setWindowOpacity(0.90)
-        self._show_red_border = True  # debug aid, set False later
+        self._show_red_border = True  # DEBUG: remove after user confirms visibility
 
-        # --- initial position ---
-        self._load_position()
-        # log the actual position for debugging
+        # --- position at CENTER of primary screen ---
+        self._move_to_center()
+
+        # log where we ended up
+        center = self.geometry().center()
+        screen = QApplication.screenAt(center)
         logging.info(
-            f"[FloatingButton] Positioned at ({self.x()}, {self.y()}) "
-            f"on screen: {QApplication.screenAt(self.geometry().center())}"
+            f"[FloatingButton] Position at ({self.x()}, {self.y()}), "
+            f"center ({center.x()}, {center.y()}), "
+            f"screen: {screen.name() if screen else 'NONE'}"
         )
 
-        # --- opacity animation timer ---
+        # --- animation timer ---
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._animate_opacity)
-        self._anim_timer.start(16)  # ~60 fps
+        self._anim_timer.start(16)
 
         self.show()
         self.raise_()
+        self.activateWindow()
         logging.info("[FloatingButton] Shown and raised")
 
-    # ── paint ──────────────────────────────────────────────────────────────────
+    # -- lazy sidebar ----------------------------------------------------------
+
+    @property
+    def sidebar(self):
+        if self._sidebar is None:
+            logging.info("[FloatingButton] First use — creating sidebar lazily")
+            from sidebar import Sidebar
+            self._sidebar = Sidebar()
+        return self._sidebar
+
+    # -- paint -----------------------------------------------------------------
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -82,7 +96,7 @@ class FloatingButton(QWidget):
 
         r = self.rect().adjusted(2, 2, -2, -2)
 
-        # --- debug: red border full rect ---
+        # debug red border
         if self._show_red_border:
             painter.setPen(QPen(QColor(255, 0, 0), 3))
             painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -93,8 +107,7 @@ class FloatingButton(QWidget):
         painter.setBrush(QColor(0, 0, 0, 60))
         painter.drawEllipse(r.translated(0, 2))
 
-        # background gradient
-        painter.setBrush(QBrush(QColor(50, 50, 58)))  # solid fallback
+        # background
         if self._hovered or self._dragging:
             painter.setBrush(QBrush(QColor(60, 120, 240)))
         else:
@@ -102,7 +115,7 @@ class FloatingButton(QWidget):
         painter.setPen(QPen(QColor(255, 255, 255, 80), 1.5))
         painter.drawEllipse(r)
 
-        # icon centered
+        # icon
         if self._icon and not self._icon.isNull():
             icon_size = self.SIZE - 20
             scaled = self._icon.scaled(
@@ -116,7 +129,7 @@ class FloatingButton(QWidget):
 
         painter.end()
 
-    # ── mouse ──────────────────────────────────────────────────────────────────
+    # -- mouse -----------------------------------------------------------------
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -130,7 +143,6 @@ class FloatingButton(QWidget):
             delta = (event.globalPosition().toPoint() - self._drag_start).manhattanLength()
             if delta > 8:
                 self._dragging = True
-
             if self._dragging:
                 self.move(event.globalPosition().toPoint() - self._drag_offset)
 
@@ -142,13 +154,17 @@ class FloatingButton(QWidget):
                 self._update_target_screen()
                 self._save_position()
             else:
-                # Click (no meaningful drag) → toggle sidebar
+                # click → toggle sidebar
                 self.sidebar.toggle_sidebar()
-
             self._target_opacity = 0.95 if self._hovered else 0.90
             self.update()
 
-    # ── hover ──────────────────────────────────────────────────────────────────
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            # double-click: quit? or maybe full toggle? for now: toggle sidebar
+            self.sidebar.toggle_sidebar()
+
+    # -- hover -----------------------------------------------------------------
 
     def enterEvent(self, event):
         self._hovered = True
@@ -161,16 +177,14 @@ class FloatingButton(QWidget):
             self._target_opacity = 0.90
         self.update()
 
-    # ── screen logic ───────────────────────────────────────────────────────────
+    # -- screen logic ----------------------------------------------------------
 
     def _update_target_screen(self):
-        """Determine which monitor the button centre is on; set sidebar target."""
         center = self.geometry().center()
         screen = QApplication.screenAt(center)
         if not screen:
-            logging.warning("[FloatingButton] No screen found at centre position")
+            logging.warning("[FloatingButton] No screen found at centre")
             return
-
         screens = QApplication.screens()
         for i, s in enumerate(screens):
             if s.name() == screen.name():
@@ -183,18 +197,16 @@ class FloatingButton(QWidget):
                 break
 
     def _clamp_to_screen(self):
-        """Keep button fully visible inside whichever monitor it landed on."""
         center = self.geometry().center()
         screen = QApplication.screenAt(center)
         if not screen:
             return
-
         g = screen.geometry()
         x = max(g.x(), min(self.x(), g.x() + g.width() - self.SIZE))
         y = max(g.y(), min(self.y(), g.y() + g.height() - self.SIZE))
         self.move(x, y)
 
-    # ── opacity animation ──────────────────────────────────────────────────────
+    # -- opacity animation -----------------------------------------------------
 
     def _animate_opacity(self):
         cur = self.windowOpacity()
@@ -202,7 +214,16 @@ class FloatingButton(QWidget):
         if abs(diff) > 0.005:
             self.setWindowOpacity(cur + diff * 0.18)
 
-    # ── position persistence ───────────────────────────────────────────────────
+    # -- position --------------------------------------------------------------
+
+    def _move_to_center(self):
+        """Place at centre of primary screen — most visible spot."""
+        screen = QApplication.primaryScreen()
+        if screen:
+            g = screen.geometry()
+            cx = g.x() + (g.width() - self.SIZE) // 2
+            cy = g.y() + (g.height() - self.SIZE) // 2
+            self.move(cx, cy)
 
     def _get_pos_file(self):
         return os.path.join(self._paths.get_data_dir(), 'button_pos.json')
@@ -218,31 +239,19 @@ class FloatingButton(QWidget):
     def _load_position(self):
         path = self._get_pos_file()
         if not os.path.exists(path):
-            self._place_default()
+            self._move_to_center()
             return
-
         try:
             with open(path) as f:
                 data = json.load(f)
             x, y = data.get('x', 0), data.get('y', 0)
-
-            # Validate: ensure at least partially visible on some screen
             test_rect = QRect(x, y, self.SIZE, self.SIZE)
             on_screen = any(
                 s.geometry().intersects(test_rect) for s in QApplication.screens()
             )
             if on_screen:
                 self.move(x, y)
-                logging.info(f"[FloatingButton] Restored position ({x}, {y})")
             else:
                 raise ValueError("off-screen")
-        except Exception as e:
-            logging.warning(f"[FloatingButton] Position invalid ({e}), using default")
-            self._place_default()
-
-    def _place_default(self):
-        """Bottom-left corner of the primary screen."""
-        screen = QApplication.primaryScreen()
-        if screen:
-            g = screen.geometry()
-            self.move(g.x() + self.MARGIN, g.y() + g.height() - self.SIZE - self.MARGIN)
+        except Exception:
+            self._move_to_center()

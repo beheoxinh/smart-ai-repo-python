@@ -29,7 +29,6 @@ import logging
 from PyQt6.QtGui import QAction, QIcon, QActionGroup
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from utils import AppPaths
-from sidebar import Sidebar
 from components.floating_button import FloatingButton
 import traceback
 import faulthandler
@@ -59,7 +58,7 @@ def main():
     try:
         app = QApplication(sys.argv)
 
-        # Sửa lỗi: Bỏ ".desktop" ở cuối tên file
+        # Sửa lỗi: Bổ ".desktop" ở cuối tên file
         app.setDesktopFileName("smart-ai")
 
         paths = AppPaths()
@@ -72,55 +71,59 @@ def main():
         if icon.isNull():
             raise Exception("Failed to load icon, it might be corrupted.")
 
+        # --- Entry Point: Floating AI Button ---
+        # The button creates the sidebar lazily on first click.
+        floating_btn = FloatingButton(app)
+
+        # --- System Tray (secondary control) ---
         tray_icon = QSystemTrayIcon(icon, parent=app)
         tray_menu = QMenu()
 
-        try:
-            sidebar = Sidebar()
-        except Exception as e:
-            error_info = f"Failed to create the main window (Sidebar).\n\nError: {e}\n\nTraceback:\n{traceback.format_exc()}"
-            logging.error(error_info)
-            raise RuntimeError(error_info) from e
+        show_action = QAction("Show / Hide Sidebar")
+        show_action.triggered.connect(floating_btn.sidebar.toggle_sidebar)
+        tray_menu.addAction(show_action)
 
-        # --- Floating AI Button (screen selector) ---
-        FloatingButton(sidebar)
+        tray_menu.addSeparator()
 
-        # --- Screen Selection Menu ---
+        # Screen selection menu (managed from button's target)
         screen_menu = tray_menu.addMenu("Display Screen")
 
         def refresh_screen_menu():
             screen_menu.clear()
             screen_group = QActionGroup(screen_menu)
 
-            # Auto (Rightmost) option
             auto_action = QAction("Auto (Rightmost)", screen_menu, checkable=True)
-            auto_action.setChecked(sidebar.manual_screen_index == -1)
-            auto_action.triggered.connect(lambda: sidebar.set_manual_screen(-1))
+            auto_action.setChecked(
+                floating_btn._sidebar is None
+                or floating_btn._sidebar.manual_screen_index == -1
+            )
+            auto_action.triggered.connect(lambda: floating_btn._sidebar and floating_btn._sidebar.set_manual_screen(-1))
             screen_menu.addAction(auto_action)
             screen_group.addAction(auto_action)
 
             screen_menu.addSeparator()
 
-            # Individual screens
             screens = QApplication.screens()
             for i, screen in enumerate(screens):
-                screen_name = f"Screen {i + 1}: {screen.name()} ({screen.geometry().width()}x{screen.geometry().height()})"
+                screen_name = (
+                    f"Screen {i + 1}: {screen.name()}"
+                    f" ({screen.geometry().width()}x{screen.geometry().height()})"
+                )
                 action = QAction(screen_name, screen_menu, checkable=True)
-                action.setChecked(sidebar.manual_screen_index == i)
-                # Sử dụng lambda với capture giá trị hiện tại của i
-                action.triggered.connect(lambda checked, idx=i: sidebar.set_manual_screen(idx))
+                action.setChecked(
+                    floating_btn._sidebar is not None
+                    and floating_btn._sidebar.manual_screen_index == i
+                )
+                action.triggered.connect(lambda checked, idx=i: floating_btn._sidebar and floating_btn._sidebar.set_manual_screen(idx))
                 screen_menu.addAction(action)
                 screen_group.addAction(action)
 
         refresh_screen_menu()
 
-        # Cập nhật menu khi cắm/rút màn hình
         app.screenAdded.connect(lambda _: refresh_screen_menu())
         app.screenRemoved.connect(lambda _: refresh_screen_menu())
 
-        show_action = QAction("Show")
-        show_action.triggered.connect(sidebar.show_sidebar)
-        tray_menu.addAction(show_action)
+        tray_menu.addSeparator()
 
         exit_action = QAction("Quit")
         exit_action.triggered.connect(app.quit)
