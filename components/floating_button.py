@@ -40,6 +40,8 @@ class FloatingButton(QWidget):
         self._icon = QPixmap(icon_path)
         if self._icon.isNull():
             logging.error(f"[FloatingButton] Cannot load icon: {icon_path}")
+        else:
+            logging.info(f"[FloatingButton] Icon loaded: {icon_path} ({self._icon.width()}x{self._icon.height()})")
 
         # ── sidebar (separate window, no parent, not embedded) ────────────
         self._sidebar = None
@@ -117,7 +119,7 @@ class FloatingButton(QWidget):
 
         # Icon
         if self._icon and not self._icon.isNull():
-            icon_size = self.SIZE - 20
+            icon_size = max(self.SIZE - 20, 32)  # minimum 32px
             scaled = self._icon.scaled(
                 icon_size, icon_size,
                 Qt.AspectRatioMode.KeepAspectRatio,
