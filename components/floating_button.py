@@ -364,7 +364,8 @@ class FloatingButton(QWidget):
             # Load opacity (default 50%)
             opacity = data.get('opacity', 50)
             alpha = opacity / 100.0
-            self._set_target_alpha(alpha)
+            self._current_alpha = alpha
+            self._target_alpha = alpha
             
             # Load size (default 64)
             size = data.get('size', 64)
