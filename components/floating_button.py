@@ -477,6 +477,9 @@ class FloatingButton(QWidget):
         the next frame.  Result: zero visible flicker."""
         if not self.isVisible() or self._sidebar_visible:
             return
+        # Reset hover state — on workspace switch, leaveEvent never fires
+        # because Wayland hides the window without notifying Qt.
+        self._hovered = False
         self.hide()
         self.show()
         self.raise_()
