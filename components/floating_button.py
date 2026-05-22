@@ -268,7 +268,14 @@ class FloatingButton(QWidget):
         if screen:
             sg = screen.geometry()
             sidebar_w = self._sidebar_w or sg.width() // 2
-            sidebar_h = self._sidebar_h or int(sg.height() * 2 / 3)
+
+            # Clamp sidebar height to available work area (excludes panels / topbar)
+            saved_h = self._sidebar_h or int(sg.height() * 2 / 3)
+            available_h = screen.availableGeometry().height()
+            sidebar_h = min(saved_h, available_h - 5)
+            if sidebar_h != saved_h:
+                self._sidebar_h = sidebar_h
+                self._save_settings({'sidebar_h': sidebar_h})
 
             # Position: right of button, same Y
             sx = self.x() + self.SIZE
