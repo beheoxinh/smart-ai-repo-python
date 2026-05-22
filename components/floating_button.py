@@ -480,6 +480,11 @@ class FloatingButton(QWidget):
         self.hide()
         self.show()
         self.raise_()
+        # show() resets window opacity to 1.0 — re-apply immediately
+        target = 0.85 if self._hovered else 0.50
+        self._current_alpha = target
+        self._set_target_alpha(target)
+        self.update()
 
     def _load_position(self):
         """Reload position + sidebar dims from button_pos.json.
