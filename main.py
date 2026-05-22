@@ -21,7 +21,6 @@ from PyQt6.QtGui import QAction, QIcon, QActionGroup
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from utils import AppPaths
 from components.floating_button import FloatingButton
-import traceback
 import faulthandler
 
 faulthandler.enable()
@@ -66,7 +65,7 @@ def main():
         tray_menu = QMenu()
 
         show_action = QAction("Show / Hide Sidebar")
-        show_action.triggered.connect(floating_btn.sidebar.toggle_sidebar)
+        show_action.triggered.connect(lambda *a: (floating_btn._update_target_screen(), floating_btn.sidebar.toggle_sidebar()))
         tray_menu.addAction(show_action)
 
         tray_menu.addSeparator()
@@ -84,7 +83,7 @@ def main():
             )
             auto_action.triggered.connect(
                 lambda: floating_btn._sidebar
-                and floating_btn._sidebar.set_manual_screen(-1)
+                        and floating_btn._sidebar.set_manual_screen(-1)
             )
             screen_menu.addAction(auto_action)
             screen_group.addAction(auto_action)
@@ -102,7 +101,7 @@ def main():
                 )
                 action.triggered.connect(
                     lambda checked, idx=i: floating_btn._sidebar
-                    and floating_btn._sidebar.set_manual_screen(idx)
+                                           and floating_btn._sidebar.set_manual_screen(idx)
                 )
                 screen_menu.addAction(action)
                 screen_group.addAction(action)

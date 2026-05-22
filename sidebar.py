@@ -168,6 +168,16 @@ class Sidebar(QMainWindow):
         self.is_visible = True
         self.last_show_time = time.time()
 
+        # Always re-sync screen from the floating button's last known index
+        if self.manual_screen_index >= 0:
+            screens = QApplication.screens()
+            if 0 <= self.manual_screen_index < len(screens):
+                self.active_screen = screens[self.manual_screen_index]
+                logging.info(
+                    f"[Sidebar] Resynced to manual screen {self.manual_screen_index}: "
+                    f"{self.active_screen.name()}"
+                )
+
         self.update_position()
 
         if hasattr(self, "main_ui_container"):
@@ -245,17 +255,17 @@ class Sidebar(QMainWindow):
     def enterEvent(self, event):
         self.last_mouse_in_time = time.time()
 
-        # Only auto-detect screen when no manual screen is set
-        # (floating button controls manual screen selection)
-        if not self.is_visible and self.manual_screen_index < 0:
-            cursor_pos = QCursor.pos()
-            screen_with_mouse = QApplication.screenAt(cursor_pos)
-            if screen_with_mouse and screen_with_mouse != self.active_screen:
-                self.active_screen = screen_with_mouse
-                self.update_position()
-                logging.info(
-                    f"[Screen] Jumped to screen: {screen_with_mouse.name()}"
-                )
+        if not self.is_visible:
+            # Only auto-detect when no manual screen is set
+            if self.manual_screen_index < 0:
+                cursor_pos = QCursor.pos()
+                screen_with_mouse = QApplication.screenAt(cursor_pos)
+                if screen_with_mouse and screen_with_mouse != self.active_screen:
+                    self.active_screen = screen_with_mouse
+                    self.update_position()
+                    logging.info(
+                        f"[Screen] Jumped to screen: {screen_with_mouse.name()}"
+                    )
 
             curr_y = event.position().y()
             self.gesture_entry_y = curr_y
