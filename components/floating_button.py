@@ -43,7 +43,8 @@ class FloatingButton(QWidget):
 
         # ── sidebar (separate window, no parent, not embedded) ────────────
         self._sidebar = None
-        self._sidebar_w = 360
+        self._sidebar_w = 0
+        self._sidebar_h = 0
         self._sidebar_visible = False
 
         # ── drag / click state ────────────────────────────────────────────
@@ -201,26 +202,34 @@ class FloatingButton(QWidget):
         self._toggle_sidebar()
 
     def _show_sidebar(self):
-        """Show sidebar flush against the RIGHT edge of the current screen.
+        """Show sidebar at right edge of screen, vertically centered on button.
 
-        Uses Qt parent relationship (SidebarPanel self as parent) so Wayland
-        keeps the sidebar on the same screen as the button and positions it
-        at our desired coordinates.
+        Default size: 1/2 screen width × 2/3 screen height.
+        Uses Qt parent + setTransientParent + geometry-before-show for Wayland.
         """
         self._sidebar_visible = True
         sidebar = self._get_sidebar()
-        sidebar_w = self._sidebar_w
 
         # Find the screen the button is on
         screen = QApplication.screenAt(self.geometry().center())
         if screen:
             sg = screen.geometry()
+            # Default size: 1/2 width, 2/3 height
+            sidebar_w = sg.width() // 2
+            sidebar_h = int(sg.height() * 2 / 3)
+            self._sidebar_w = sidebar_w
+            self._sidebar_h = sidebar_h
+
             # Sidebar flush against right edge
             sx = sg.x() + sg.width() - sidebar_w
-            # Button immediately to the left of sidebar
+            # Vertically CENTERED on the button
+            btn_center_y = self.y() + self.SIZE // 2
+            sy = btn_center_y - sidebar_h // 2
+            # Clamp to stay on-screen
+            sy = max(sg.y(), min(sy, sg.y() + sg.height() - sidebar_h))
+
+            # Move button to the left of sidebar
             btn_x = sx - self.SIZE
-            sy = max(sg.y(), min(self.y(), sg.y() + sg.height() - 600))
-            # Move button first (Wayland: approximate but saved for next time)
             wh = self.windowHandle()
             if wh is not None:
                 wh.setGeometry(QRect(btn_x, self.y(), self.SIZE, self.SIZE))
@@ -228,25 +237,27 @@ class FloatingButton(QWidget):
                 self.move(btn_x, self.y())
             self._save_position()
         else:
+            # Fallback: right of button with previous size or defaults
+            sidebar_w = self._sidebar_w or 500
+            sidebar_h = self._sidebar_h or 500
             sx = self.x() + self.SIZE
             sy = self.y()
 
-        # Force native handle creation, set transient parent relationship
+        # Force native handle + transient parent for Wayland positioning
         sidebar.winId()
         sidebar_wh = sidebar.windowHandle()
         btn_wh = self.windowHandle()
         if sidebar_wh and btn_wh:
             sidebar_wh.setTransientParent(btn_wh)
 
-        # Set geometry BEFORE showing — Wayland compositor gets the hint on first commit
-        sidebar.setGeometry(sx, sy, sidebar_w, 600)
+        sidebar.setGeometry(sx, sy, sidebar_w, sidebar_h)
         sidebar.show_content()
         sidebar.show()
         sidebar.raise_()
 
         logging.info(
-            f"[FloatingButton] Sidebar at ({sx},{sy}) "
-            f"{sidebar_w}x600 — button at ({self.x()},{self.y()})"
+            f"[FloatingButton] Sidebar {sidebar_w}x{sidebar_h} "
+            f"at ({sx},{sy}) — button at ({self.x()},{self.y()})"
         )
 
     def _hide_sidebar(self):

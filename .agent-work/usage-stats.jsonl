@@ -134,3 +134,4 @@
 {"timestamp":"2026-05-22T07:48:06.108322505Z","prompt":"đéo mẹ lúc ẩn sidebar nó lại đẩy cái button icon sang vị trí cạnh trái của sidebar đứng như thế không đúng đâu. mày hãy để cái sidebar nổi hẳn lên bên trên của icon button giống như thuộc tính positio","model":"opencode/big-pickle","toolCalls":25}
 {"timestamp":"2026-05-22T07:51:48.680452650Z","prompt":"ngon rồi đấy, lúc sidebar hiện lên có đẩy nó sang vị trí sát cạnh phải màn hình được không","model":"opencode/big-pickle","toolCalls":7}
 {"timestamp":"2026-05-22T07:54:51.936443844Z","prompt":"vị trí của button icon trên màn hình được lưu lại tọa độ sau mỗi lần tắt mở app nó lại hiện trở lại vị trí ban đầu. vị trí của sidebar khi hiện ra nằm sát cạnh màn hình hiện tại thay vì hiện lên ở giữ","model":"opencode/big-pickle","toolCalls":0}
+{"timestamp":"2026-05-22T07:57:31.744460518Z","prompt":"phải chỉnh đi nó không chạy như mong đợi đâu, nó hiện ở giữa màn hình","model":"opencode/big-pickle","toolCalls":7}
