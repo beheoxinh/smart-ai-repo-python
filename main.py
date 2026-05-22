@@ -97,8 +97,25 @@ def main():
         opacity_slider.setMinimum(10)
         opacity_slider.setMaximum(100)
         opacity_slider.setValue(50)
-        opacity_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
-        opacity_slider.setTickInterval(10)
+        opacity_slider.setFixedWidth(150)
+        opacity_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                background: #ddd;
+                height: 6px;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #0078d4;
+                border: 1px solid #005a9e;
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #1e90ff;
+            }
+        """)
         opacity_slider.valueChanged.connect(btn.set_opacity)
         opacity_layout.addWidget(opacity_slider)
 
