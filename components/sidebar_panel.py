@@ -17,9 +17,9 @@ class SidebarPanel(QWidget):
     Pure content widget that the parent FloatingButton resizes/positions.
     """
 
-    resizeRequested = pyqtSignal(int)   # new sidebar width from drag handle
+    resizeRequested = pyqtSignal(int)  # new sidebar width from drag handle
     resizeHeightRequested = pyqtSignal(int)  # new sidebar height from bottom drag
-    closeRequested = pyqtSignal()        # from watchdog or close button
+    closeRequested = pyqtSignal()  # from watchdog or close button
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -198,6 +198,16 @@ class SidebarPanel(QWidget):
             self.popup_windows.remove(popup)
         if not self.popup_windows:
             self.has_active_popup = False
+            # After the last popup closes, immediately hide sidebar if
+            # the cursor is outside — leaveEvent may have already fired
+            # while has_active_popup was True and was consumed by the guard.
+            if self.is_visible and not self.is_resizing:
+                global_pos = QCursor.pos()
+                local_pos = self.mapFromGlobal(global_pos)
+                margin = 50
+                rect = self.rect().adjusted(-margin, -margin, margin, margin)
+                if not rect.contains(local_pos):
+                    self.closeRequested.emit()
 
     # ── menu state ─────────────────────────────────────────────────────
 
