@@ -6,18 +6,20 @@ from PyQt6.QtCore import Qt, QPoint, QTimer, QRect
 from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QShortcut, QKeySequence
 from PyQt6.QtWidgets import QWidget, QApplication, QHBoxLayout
 
-from components.sidebar_panel import SidebarPanel
 from utils import AppPaths
+from components.sidebar_panel import SidebarPanel
 
 
 class FloatingButton(QWidget):
-    """Single window containing floating icon (left) + optional sidebar (right).
+    """Single window: sidebar (left) + floating icon (right).
 
-    Collapsed: 64×64 window (button only).
-    Expanded:  (64 + sidebar_w) × 600 px (button + sidebar at current pos).
+    Collapsed:  64×64 window (icon only).
+    Expanded:   (sidebar_w + 64) × 600 px — sidebar left of the icon.
 
-    No screen detection, no forced positioning.
-    Sidebar is always on the same screen as the button — same Qt surface.
+    The icon's screen position stays fixed when expanding/collapsing;
+    the window extends to the left to show the sidebar panel.
+
+    Always-on-top except fullscreen.  No screen-geometry anchoring.
     """
 
     SIZE = 64
@@ -44,23 +46,19 @@ class FloatingButton(QWidget):
         if self._icon.isNull():
             logging.error(f"[FloatingButton] Cannot load icon: {icon_path}")
 
-        # ── sidebar panel (embedded child) ────────────────────────────────
+        # ── sidebar panel (embedded child, left of icon) ──────────────────
         self._sidebar = SidebarPanel(self)
         self._sidebar.setVisible(False)
         self._sidebar_w = self.MIN_SIDEBAR_WIDTH
         self._sidebar_visible = False
 
-        # Connect signals from sidebar
         self._sidebar.resizeRequested.connect(self._on_sidebar_resize)
         self._sidebar.closeRequested.connect(self._on_sidebar_close)
 
-        # ── layout: sidebar takes remaining space after button area ────────
+        # ── layout: sidebar (left) then icon spacer (right) ───────────────
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(0)
-
-        # Sidebar panel fills the layout; the button is painted in the
-        # leading 64px which are transparent in the layout.
         self._layout.addWidget(self._sidebar)
 
         # ── drag / click state ────────────────────────────────────────────
@@ -84,25 +82,27 @@ class FloatingButton(QWidget):
         self._anim_timer.timeout.connect(self._tick_alpha)
         self._anim_timer.start(16)
 
-        # ── initial size (button only) ────────────────────────────────────
         self.setFixedSize(self.SIZE, self.SIZE)
-
         self.show()
         self.raise_()
-        logging.info("[FloatingButton] Initialised (embedded sidebar)")
+        logging.info("[FloatingButton] Initialised (sidebar-left layout)")
 
     # ── paint ──────────────────────────────────────────────────────────────
 
     def paintEvent(self, event):
-        """Paint the button circle at the left SIZE pixels of the window."""
+        """Paint the icon circle at the RIGHT edge of the window."""
         alpha = self._current_alpha
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Clip to button area (left SIZE × SIZE)
-        button_rect = QRect(0, 0, self.SIZE, self.SIZE)
-        painter.setClipRect(button_rect)
-        r = button_rect.adjusted(2, 2, -2, -2)
+        # Button is always in the rightmost SIZE pixels
+        if self._sidebar_visible:
+            btn_x = self._sidebar_w
+        else:
+            btn_x = 0
+        btn_rect = QRect(btn_x, 0, self.SIZE, self.SIZE)
+        painter.setClipRect(btn_rect)
+        r = btn_rect.adjusted(2, 2, -2, -2)
 
         # Shadow
         painter.setPen(Qt.PenStyle.NoPen)
@@ -126,8 +126,8 @@ class FloatingButton(QWidget):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            cx = (button_rect.width() - scaled.width()) // 2
-            cy = (button_rect.height() - scaled.height()) // 2
+            cx = btn_rect.x() + (btn_rect.width() - scaled.width()) // 2
+            cy = (btn_rect.height() - scaled.height()) // 2
 
             tinted = QPixmap(scaled.size())
             tinted.fill(Qt.GlobalColor.transparent)
@@ -160,8 +160,8 @@ class FloatingButton(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            # Only handle clicks in the button area (left SIZE px)
-            if event.position().x() > self.SIZE:
+            # Only handle clicks in the icon area (right SIZE px)
+            if self._sidebar_visible and event.position().x() < self._sidebar_w:
                 return
             self._press_pos = event.globalPosition().toPoint()
             self._dragging = False
@@ -170,7 +170,7 @@ class FloatingButton(QWidget):
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.MouseButton.LeftButton and not self._dragging:
             delta = (
-                    event.globalPosition().toPoint() - self._press_pos
+                event.globalPosition().toPoint() - self._press_pos
             ).manhattanLength()
             if delta > 8:
                 wh = self.windowHandle()
@@ -185,7 +185,6 @@ class FloatingButton(QWidget):
                 self._save_position()
             else:
                 self._toggle_sidebar()
-
             self._set_target_alpha(0.70 if self._hovered else 0.50)
             self.update()
 
@@ -211,42 +210,53 @@ class FloatingButton(QWidget):
             self._show_sidebar()
 
     def _show_sidebar(self):
-        """Expand window width to show sidebar alongside the button."""
+        """Expand window to the left; icon stays at its current screen position."""
         self._sidebar_visible = True
 
         window_w = self.SIZE + self._sidebar_w
-        window_h = 600  # fixed height — no screen geometry
+        window_h = 600
 
         self._sidebar.show_content()
         self._sidebar.setFixedWidth(self._sidebar_w)
 
-        # Resize at current position — no screen queries at all
+        # Icon is at the RIGHT edge of the window; shift window left so icon
+        # doesn't move on screen.
+        new_x = self.x() - self._sidebar_w
         self.setFixedSize(window_w, window_h)
+        self.move(new_x, self.y())
 
         logging.info(
             f"[FloatingButton] Sidebar shown: {window_w}x{window_h} @ "
-            f"({self.x()},{self.y()})"
+            f"({new_x},{self.y()})"
         )
 
     def _hide_sidebar(self):
-        """Shrink window back to button-only."""
+        """Shrink window back to icon-only; icon returns to saved position."""
         self._sidebar_visible = False
         self._sidebar.hide_content()
+
+        # Restore position to the icon's original x (which is window x
+        # after subtracting sidebar_w during show).
+        icon_x = self.x() + self._sidebar_w
         self.setFixedSize(self.SIZE, self.SIZE)
+        self.move(icon_x, self.y())
         self.update()
+
         logging.info("[FloatingButton] Sidebar hidden")
 
     def _on_sidebar_close(self):
-        """Called by sidebar watchdog or close button."""
         self._hide_sidebar()
 
     def _on_sidebar_resize(self, new_w):
-        """Called during resize-handle drag — adjust window width only."""
+        """Resize handle dragged — keep icon pinned to right edge."""
+        delta = new_w - self._sidebar_w
         self._sidebar_w = new_w
         self._sidebar.setFixedWidth(new_w)
 
         window_w = self.SIZE + new_w
         self.setFixedSize(window_w, self.height())
+        # Window moves left/right so icon's screen X stays constant
+        self.move(self.x() - delta, self.y())
 
     # ── position persistence ───────────────────────────────────────────────
 
@@ -286,6 +296,6 @@ class FloatingButton(QWidget):
         if screen:
             g = screen.geometry()
             self.move(
-                g.x() + (g.width() - self.SIZE) // 2,
-                g.y() + (g.height() - self.SIZE) // 2,
+                g.x() + g.width() - self.SIZE - 20,
+                g.y() + g.height() // 2 - self.SIZE // 2,
             )
