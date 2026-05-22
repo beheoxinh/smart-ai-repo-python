@@ -14,7 +14,7 @@ class FloatingButton(QWidget):
     """Single window containing floating icon (left) + optional sidebar (right).
 
     Collapsed: 64×64 window (button only).
-    Expanded:  (64 + sidebar_w) × screen_height (button + sidebar).
+    Expanded:  (64 + sidebar_w) × screen_height (button + sidebar at current pos).
 
     Sidebar is always on the same screen as the button because they share
     one window surface — no setScreen() needed on Wayland.
@@ -170,7 +170,7 @@ class FloatingButton(QWidget):
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.MouseButton.LeftButton and not self._dragging:
             delta = (
-                event.globalPosition().toPoint() - self._press_pos
+                    event.globalPosition().toPoint() - self._press_pos
             ).manhattanLength()
             if delta > 8:
                 wh = self.windowHandle()
@@ -211,35 +211,28 @@ class FloatingButton(QWidget):
             self._show_sidebar()
 
     def _show_sidebar(self):
-        """Expand window to show button + sidebar."""
+        """Expand window width to show sidebar alongside the button."""
         self._sidebar_visible = True
 
-        # Determine target screen from current position
-        center = self.geometry().center()
-        screen = QApplication.screenAt(center)
+        # Use screen height so the web view has room, but KEEP current position
+        screen = QApplication.screenAt(self.geometry().center())
         if not screen:
             screen = QApplication.primaryScreen()
             if not screen:
                 return
-        geom = screen.geometry()
 
-        # Desired geometry: anchored to right edge of screen
         window_w = self.SIZE + self._sidebar_w
-        window_h = geom.height()
-        new_x = geom.x() + geom.width() - window_w
-        new_y = geom.y()
+        window_h = screen.geometry().height()
 
-        # Show sidebar content first (layout resolves)
         self._sidebar.show_content()
         self._sidebar.setFixedWidth(self._sidebar_w)
 
-        # Resize and position window
+        # Resize at current position — no forced screen-edge anchoring
         self.setFixedSize(window_w, window_h)
-        self.setGeometry(new_x, new_y, window_w, window_h)
 
         logging.info(
             f"[FloatingButton] Sidebar shown: {window_w}x{window_h} @ "
-            f"({new_x},{new_y}) on {screen.name()}"
+            f"({self.x()},{self.y()}) on {screen.name()}"
         )
 
     def _hide_sidebar(self):
@@ -255,22 +248,12 @@ class FloatingButton(QWidget):
         self._hide_sidebar()
 
     def _on_sidebar_resize(self, new_w):
-        """Called during resize-handle drag — adjust window width."""
+        """Called during resize-handle drag — adjust window width only."""
         self._sidebar_w = new_w
         self._sidebar.setFixedWidth(new_w)
 
-        center = self.geometry().center()
-        screen = QApplication.screenAt(center)
-        if not screen:
-            screen = QApplication.primaryScreen()
-            if not screen:
-                return
-        geom = screen.geometry()
         window_w = self.SIZE + new_w
-        new_x = geom.x() + geom.width() - window_w
-
         self.setFixedSize(window_w, self.height())
-        self.move(new_x, self.y())
 
     # ── position persistence ───────────────────────────────────────────────
 
