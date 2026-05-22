@@ -187,6 +187,12 @@ class Sidebar(QMainWindow):
 
         self.raise_()
         self.activateWindow()
+
+        # On Wayland, activateWindow may cause compositor to move the
+        # window to the active/pointer screen.  Re-assert screen after
+        # the compositor has processed the focus request.
+        QTimer.singleShot(50, self._reassert_screen)
+
         if self.content_widget and self.content_widget.web_view:
             self.content_widget.web_view.setFocus()
 
@@ -350,6 +356,17 @@ class Sidebar(QMainWindow):
             f"[Pos] Screen '{screen.name()}': {geom.x()},{geom.y()} "
             f"{geom.width()}x{geom.height()} -> X:{new_x} W:{target_w}"
         )
+
+    def _reassert_screen(self):
+        """Re-apply active_screen after compositor may have moved window."""
+        if not self.active_screen:
+            return
+        wh = self.windowHandle()
+        if wh:
+            wh.setScreen(self.active_screen)
+            logging.info(
+                f"[Sidebar] Re-asserted screen: {self.active_screen.name()}"
+            )
 
     # ── resize ──────────────────────────────────────────────
     def resizing_started(self):
