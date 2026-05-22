@@ -54,6 +54,18 @@ class AppPaths:
     def join_path(self, *paths):
         return os.path.normpath(os.path.join(*paths))
 
+    def read(self, filename):
+        """Read content from a file in the data directory."""
+        file_path = os.path.join(self.get_data_dir(), filename)
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+
+    def write(self, filename, content):
+        """Write content to a file in the data directory."""
+        file_path = os.path.join(self.get_data_dir(), filename)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
 def alert_popup(parent, title, message):
     msg_box = QMessageBox(parent)
     msg_box.setIcon(QMessageBox.Icon.Critical)
