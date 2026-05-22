@@ -68,8 +68,17 @@ class FloatingButton(QWidget):
         self._anim_timer.start(16)
 
         # ── force native window, then show (loads settings + position) ────
-        self.winId()                # create native wl_surface + xdg-surface
+        self.winId()  # create native wl_surface + xdg-surface
         self._show_button()
+
+        # ── workspace tracking ─────────────────────────────────────────────
+        # Every 3 s, if sidebar is closed, force hide/show to re-map the
+        # window onto the current GNOME workspace (Window type is workspace-
+        # bound; the timer ensures the button follows the active workspace).
+        self._ws_timer = QTimer(self)
+        self._ws_timer.timeout.connect(self._reapply_workspace)
+        self._ws_timer.start(3000)
+
         logging.info("[FloatingButton] Initialised")
 
     # ── unified show method (always respects saved settings) ───────────────
@@ -81,14 +90,30 @@ class FloatingButton(QWidget):
         Every code path that needs to show the button MUST call this method
         to guarantee opacity / size / position are always loaded from config.
         """
-        self._load_position()       # restore saved position (x, y)
-        self._load_settings()       # restore opacity + size from settings
+        self._load_position()  # restore saved position (x, y)
+        self._load_settings()  # restore opacity + size from settings
         self.show()
         self.raise_()
         logging.info(
             f"[FloatingButton] Button shown: opacity={self._current_alpha:.0%}, "
             f"size={self.SIZE}px, pos=({self.x()},{self.y()})"
         )
+
+    # ── workspace re-apply ──────────────────────────────────────────────────
+
+    def _reapply_workspace(self):
+        """Force re-map on the current GNOME workspace.
+
+        hide() + show() triggers a full xdg-toplevel map cycle, which
+        makes the compositor place the Window on the current (active)
+        workspace.  Uses _show_button() to ensure opacity/size stay correct
+        after the compositor resets window state.
+        """
+        if not self.isVisible() or self._sidebar_visible:
+            return
+        self._hovered = False
+        self.hide()
+        self._show_button()
 
     # ── lazy sidebar ───────────────────────────────────────────────────────
 
