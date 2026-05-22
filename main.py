@@ -96,45 +96,18 @@ def main():
 
         tray_menu.addSeparator()
 
-        # ── opacity slider ────────────────────────────────────────────────
-        opacity_widget = QWidget()
-        opacity_layout = QHBoxLayout(opacity_widget)
-        opacity_layout.setContentsMargins(10, 5, 10, 5)
-
-        opacity_label = QLabel("Opacity:")
-        opacity_layout.addWidget(opacity_label)
-
-        opacity_slider = QSlider(Qt.Orientation.Horizontal)
-        opacity_slider.setMinimum(10)
-        opacity_slider.setMaximum(100)
-        opacity_slider.setValue(btn.get_opacity())
-        opacity_slider.setFixedWidth(200)
-        opacity_slider.setMinimumHeight(30)
-        # Simplified stylesheet for better visibility
-        opacity_slider.setStyleSheet("""
-            QSlider::groove:horizontal {
-                background: #bbb;
-                height: 10px;
-                border-radius: 5px;
-            }
-            QSlider::handle:horizontal {
-                background: #0078d7;
-                border: 2px solid #005a9e;
-                width: 20px;
-                height: 20px;
-                margin: -5px 0;
-                border-radius: 10px;
-            }
-            QSlider::handle:horizontal:hover {
-                background: #1e90ff;
-            }
-        """)
-        opacity_slider.valueChanged.connect(btn.set_opacity)
-        opacity_layout.addWidget(opacity_slider)
-
-        opacity_action = QWidgetAction(tray_menu)
-        opacity_action.setDefaultWidget(opacity_widget)
-        tray_menu.addAction(opacity_action)
+        # ── opacity submenu ───────────────────────────────────────────────
+        opacity_menu = QMenu("Opacity", tray_menu)
+        
+        current_opacity = btn.get_opacity()
+        
+        for value in [20, 40, 60, 80, 100]:
+            checkmark = " ✓" if abs(current_opacity - value) < 5 else ""
+            opacity_action = QAction(f"{value}%{checkmark}")
+            opacity_action.triggered.connect(lambda checked, v=value: btn.set_opacity(v))
+            opacity_menu.addAction(opacity_action)
+        
+        tray_menu.addMenu(opacity_menu)
 
         # ── button size submenu ───────────────────────────────────────────
         size_menu = QMenu("Button Size", tray_menu)
