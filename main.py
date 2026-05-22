@@ -28,11 +28,9 @@ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
 import logging
 import faulthandler
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QIcon
 from PyQt6.QtWidgets import (
-    QApplication, QSystemTrayIcon, QMenu, QSlider, QWidgetAction,
-    QWidget, QLabel, QHBoxLayout
+    QApplication, QSystemTrayIcon, QMenu
 )
 
 from utils import AppPaths
@@ -80,18 +78,25 @@ def main():
         btn = FloatingButton(app)
         app.aboutToQuit.connect(btn._save_position)
 
+        # ── manual refresh button ───────────────────────────────────────────
+        refresh_action = QAction("Refresh")
+        refresh_action.triggered.connect(btn.refresh_button)
+        tray_menu.addAction(refresh_action)
+
+        tray_menu.addSeparator()
+
         show_action = QAction("Hide Float Button")
-        
+
         def update_show_action_text():
             if btn.isVisible():
                 show_action.setText("Hide Float Button")
             else:
                 show_action.setText("Show Float Button")
-        
+
         def toggle_and_update():
             btn.toggle_button()
             update_show_action_text()
-        
+
         show_action.triggered.connect(toggle_and_update)
         tray_menu.addAction(show_action)
 
@@ -99,33 +104,33 @@ def main():
 
         # ── opacity submenu ───────────────────────────────────────────────
         opacity_menu = QMenu("Opacity", tray_menu)
-        
+
         for value in [20, 40, 60, 80, 100]:
             action = QAction(f"{value}%", tray_menu)
             action.setCheckable(True)
             action.triggered.connect((lambda v: lambda: btn.set_opacity(v))(value))
             opacity_menu.addAction(action)
-        
+
         def update_opacity_checks():
             current = btn.get_opacity()
             for action in opacity_menu.actions():
                 text = action.text().rstrip("%")
                 value = int(text)
                 action.setChecked(abs(current - value) < 5)
-        
+
         opacity_menu.aboutToShow.connect(update_opacity_checks)
-        
+
         tray_menu.addMenu(opacity_menu)
 
         # ── button size submenu ───────────────────────────────────────────
         size_menu = QMenu("Button Size", tray_menu)
-        
+
         for size, label in [(48, "Small"), (64, "Medium"), (80, "Large"), (96, "Extra Large")]:
             action = QAction(f"{label} ({size}px)", tray_menu)
             action.setCheckable(True)
             action.triggered.connect((lambda s: lambda: btn.set_size(s))(size))
             size_menu.addAction(action)
-        
+
         def update_size_checks():
             current = btn.get_size()
             for action in size_menu.actions():
@@ -133,9 +138,9 @@ def main():
                 text = action.text()
                 size = int(text.split("(")[1].split("px")[0])
                 action.setChecked(current == size)
-        
+
         size_menu.aboutToShow.connect(update_size_checks)
-        
+
         tray_menu.addMenu(size_menu)
 
         tray_menu.addSeparator()

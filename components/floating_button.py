@@ -69,16 +69,8 @@ class FloatingButton(QWidget):
         self._anim_timer.start(16)
 
         # ── force native window, then show (loads settings + position) ────
-        self.winId()                # create native wl_surface + xdg-surface
+        self.winId()  # create native wl_surface + xdg-surface
         self._show_button()
-
-        # ── workspace tracking ─────────────────────────────────────────────
-        # Every 3 s, if sidebar is closed, force hide/show to re-map the
-        # window onto the current GNOME workspace (Window type is workspace-
-        # bound; the timer ensures the button follows the active workspace).
-        self._ws_timer = QTimer(self)
-        self._ws_timer.timeout.connect(self._reapply_workspace)
-        self._ws_timer.start(3000)
 
         logging.info("[FloatingButton] Initialised")
 
@@ -91,8 +83,8 @@ class FloatingButton(QWidget):
         button icon MUST call this method to guarantee opacity/size/position
         are loaded from config.
         """
-        self._load_position()       # restore saved position (x, y)
-        self._load_settings()       # restore opacity + size from settings
+        self._load_position()  # restore saved position (x, y)
+        self._load_settings()  # restore opacity + size from settings
         self.show()
         self.raise_()
         logging.info(
@@ -100,26 +92,12 @@ class FloatingButton(QWidget):
             f"size={self.SIZE}px, pos=({self.x()},{self.y()})"
         )
 
-    # ── workspace re-apply ──────────────────────────────────────────────────
+    # ── manual refresh ─────────────────────────────────────────────────────
 
-    def _reapply_workspace(self):
-        """Re-map window on the current GNOME workspace — no flicker.
-
-        hide() + show() + raise_() in the SAME event-loop iteration makes
-        the compositor process unmap+map in a single frame batch, so there
-        is zero visible flicker.  We bypass _show_button() (which does file
-        I/O) and instead directly restore _resting_alpha after show().
-        """
-        if not self.isVisible() or self._sidebar_visible:
-            return
-        self._hovered = False
-        self.hide()
-        self.show()
-        self.raise_()
-        # show() resets window — re-apply saved opacity immediately
-        self._current_alpha = self._resting_alpha
-        self._target_alpha = self._resting_alpha
-        self.update()
+    def refresh_button(self):
+        """Reload position, opacity, size from settings and re-show."""
+        logging.info("[FloatingButton] Manual refresh triggered")
+        self._show_button()
 
     # ── lazy sidebar ───────────────────────────────────────────────────────
 
